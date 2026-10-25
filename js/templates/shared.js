@@ -104,18 +104,36 @@ export const projectsBody = m => `
     </div>`;
 
 export const servicesBody = m => `
-    <div class="ph-service-grid">${m.services.map(s => {
+  <div class="ph-service-grid">
+    ${(m.services || []).map(s => {
       const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
+
       return `
-      <article class="ph-card ph-service fade-in">
-        <h3>${esc(s.name)}</h3>
-        ${s.description ? `<p>${esc(s.description)}</p>` : ''}
-        ${(s.price_label || price) ? `<p class="ph-price"><span>${esc(s.price_label || '')}</span> ${esc(price)}</p>` : ''}
-        ${cta ? `<a class="ph-btn" href="${esc(cta)}"${ext(cta)}>Get in touch</a>` : ''}
-      </article>`;
+        <article class="ph-card ph-service fade-in">
+          <h3 class="ph-service-title">${esc(s.name)}</h3>
+
+          ${s.description ? `
+            <p class="ph-service-description">${esc(s.description)}</p>
+          ` : ''}
+
+          ${(s.price_label || price) ? `
+            <p class="ph-price">
+              <span>${esc(s.price_label || '')}</span>
+              ${esc(price)}
+            </p>
+          ` : ''}
+
+          ${cta ? `
+            <a class="ph-btn" href="${esc(cta)}"${ext(cta)}>Get in touch</a>
+          ` : ''}
+        </article>
+      `;
     }).join('')}
-    </div>`;
+  </div>
+`;
+
+
 
 export function educationBody(m) {
   const edu = m.education.map(e => `

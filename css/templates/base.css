@@ -111,8 +111,10 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
-/* Prevent long text from overflowing content areas */
 
+
+
+/* Prevent content from overflowing its containers */
 .ph-container,
 .ph-section,
 .ph-section-head,
@@ -131,6 +133,7 @@ textarea:focus-visible {
 .ph-timeline-item {
   min-width: 0;
   max-width: 100%;
+  box-sizing: border-box;
 }
 
 .ph-section p,
@@ -150,9 +153,11 @@ textarea:focus-visible {
 .ph-timeline-item p,
 .ph-contact-card,
 .ph-footer {
-  word-break: normal;
-  word-break: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
+
+
 
 /* ==========================================
    NAVIGATION
@@ -571,6 +576,7 @@ body[data-theme="dark"] .theme-btn::after {
    SKILLS, SERVICES & EDUCATION GRIDS
    ========================================== */
 
+
 .ph-skill-grid,
 .ph-service-grid,
 .ph-edu-grid {
@@ -580,7 +586,9 @@ body[data-theme="dark"] .theme-btn::after {
     minmax(min(100%, 240px), 1fr)
   );
   gap: 18px;
+  width: 100%;
   min-width: 0;
+  max-width: 100%;
 }
 
 .ph-skill-grid > *,
@@ -588,7 +596,37 @@ body[data-theme="dark"] .theme-btn::after {
 .ph-edu-grid > * {
   min-width: 0;
   max-width: 100%;
+  box-sizing: border-box;
 }
+
+.ph-service {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.ph-service h3,
+.ph-service p {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  box-sizing: border-box;
+}
+
+.ph-service .ph-btn {
+  align-self: flex-start;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 
 /* ==========================================
    PROJECTS
@@ -698,42 +736,39 @@ body[data-theme="dark"] .theme-btn::after {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-
   min-width: 0;
+  width: 100%;
   max-width: 100%;
-
-  word-break: normal;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
 }
 
 .ph-service h3,
 .ph-service p {
-  min-width: 0;
-  max-width: 100%;
-
-  white-space: normal;
-  word-break: normal;
-  word-break: normal;
-}
-
-.ph-service p {
-  color: var(--muted);
   display: block;
   width: 100%;
-  max-width: 100%;
   min-width: 0;
+  max-width: 100%;
+  height: auto;
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: normal;
   box-sizing: border-box;
 }
 
-
+.ph-service p {
+  color: var(--muted);
+  flex: 0 1 auto;
+}
 
 .ph-service .ph-btn {
   align-self: flex-start;
   max-width: 100%;
   margin-top: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
+
 
 .ph-edu-icon {
   display: inline-flex;
