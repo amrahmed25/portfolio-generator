@@ -353,15 +353,21 @@ async function initLoginPage() {
       return;
     }
 
-    // Honour ?next= redirect
-    const params = new URLSearchParams(window.location.search);
-    const next = params.get('next');
-    if (next && next.startsWith('/')) {
-      window.location.href = next;
-    } else {
-      window.location.href = 'dashboard.html';
-    }
+    // Honour ?next= (or ?returnTo=) but only for same-site paths, never external URLs.
+    window.location.href = safeRedirectPath(new URLSearchParams(window.location.search)) || 'dashboard.html';
   });
+}
+
+
+/**
+ * Returns a same-site path from ?next= or ?returnTo=, or '' if none is safe.
+ * Rejects protocol-relative ("//evil.com") and backslash tricks ("/\\evil.com").
+ */
+function safeRedirectPath(params) {
+  const raw = params.get('next') || params.get('returnTo') || '';
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '';
+  if (/[\r\n]/.test(raw)) return '';
+  return raw;
 }
 
 // ─────────────────────────────────────────────
@@ -417,7 +423,6 @@ async function initSignupPage() {
     const roleVal     = document.getElementById('role')?.value || '';
     const passwordVal = document.getElementById('password')?.value || '';
     const confirmVal  = document.getElementById('confirm-password')?.value || '';
-    const termsChecked = document.getElementById('terms')?.checked || false;
 
     let valid = true;
 
@@ -467,12 +472,6 @@ async function initSignupPage() {
     }
 
     // Terms
-    if (!termsChecked) {
-      setFieldError('terms-error', 'You must agree to the Terms of Service and Privacy Policy.');
-      valid = false;
-    } else {
-      setFieldError('terms-error', '');
-    }
 
     if (!valid) return;
 
@@ -497,7 +496,7 @@ async function initSignupPage() {
     } else {
       // Email confirmation required
       showToast(
-        '✉️ Almost there! Check your email to confirm your account, then sign in.',
+        'Almost there! Check your email to confirm your account, then sign in.',
         'success',
         6000
       );
@@ -683,7 +682,7 @@ function initNewPasswordForm() {
       return;
     }
 
-    showToast('🎉 Password updated! Signing you in…', 'success', 3000);
+    showToast('Password updated! Signing you in…', 'success', 3000);
     setTimeout(() => {
       window.location.href = 'dashboard.html';
     }, 2000);

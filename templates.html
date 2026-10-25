@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Templates – PortfolioHub</title>
-  <link rel="icon" href="assets/favicon.ico" type="image/x-icon" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/templates.css" />
 </head>
@@ -16,7 +16,7 @@
   <section class="templates-hero">
     <div class="container">
       <div class="templates-hero-inner">
-        <div class="templates-hero-badge">6 Professional Templates</div>
+        <div class="templates-hero-badge">Professional Templates</div>
         <h1 class="templates-hero-title">Choose Your Template</h1>
         <p class="templates-hero-sub">Start with a professionally designed template and customize it to match your brand. Every template is fully responsive and optimized for performance.</p>
       </div>
@@ -39,19 +39,19 @@
       <div class="faq-grid">
         <div class="faq-item">
           <h4>Can I switch templates later?</h4>
-          <p>Yes! You can change your template at any time from your dashboard without losing your content.</p>
+          <p>Yes. Open your portfolio in the builder and pick another template under Template &amp; Settings. Your content stays the same.</p>
         </div>
         <div class="faq-item">
           <h4>Are templates fully customizable?</h4>
-          <p>Absolutely. Colors, fonts, layout sections, and content are all editable through our visual builder.</p>
+          <p>All of your content is editable in the builder. You can also choose an accent colour and show or hide sections.</p>
         </div>
         <div class="faq-item">
           <h4>Are portfolios mobile-friendly?</h4>
-          <p>Every template is built mobile-first and tested across all screen sizes and devices.</p>
+          <p>Every template is responsive and adapts to phones, tablets and desktops. The builder preview lets you check each size.</p>
         </div>
         <div class="faq-item">
           <h4>Is there a free plan?</h4>
-          <p>Yes! You can create a full portfolio for free. Premium templates unlock additional customization options.</p>
+          <p>Yes. Every template is free to use.</p>
         </div>
       </div>
     </div>
@@ -86,13 +86,6 @@
 
   <script src="js/config.js"></script>
   <script src="js/navigation.js"></script>
-  <script type="module">
-  import { initNavigation } from './js/navigation.js';
-  import { init as initPage } from './js/community.js'; // (or explore.js / templates.js)
-  document.addEventListener('DOMContentLoaded', () => {
-    initNavigation();
-    initPage();
-  });
-</script>
+  <script type="module" src="js/templates.js"></script>
 </body>
 </html>

@@ -69,7 +69,7 @@
       font-weight: 500;
       color: var(--secondary-text);
       text-decoration: none;
-      white-space: nowrap;
+      white-space: normal;
       padding: 6px 8px;
       border-radius: var(--radius);
       transition: background 0.15s, color 0.15s;
@@ -120,7 +120,7 @@
       background: var(--white);
       color: var(--dark-text);
       transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
-      white-space: nowrap;
+      white-space: normal;
     }
     .header-btn:hover { background: var(--light-gray); }
     .header-btn--primary { background: var(--primary); color: var(--white); border-color: var(--primary); }
@@ -133,7 +133,7 @@
     #save-status {
       font-size: 0.75rem;
       color: var(--secondary-text);
-      white-space: nowrap;
+      white-space: normal;
       display: flex;
       align-items: center;
       gap: 4px;
@@ -320,7 +320,7 @@
     .skill-level-label {
       font-size: 0.8125rem;
       color: var(--secondary-text);
-      white-space: nowrap;
+      white-space: normal;
       min-width: 36px;
       text-align: right;
     }
@@ -373,7 +373,7 @@
       border-radius: 100px;
       font-size: 0.75rem;
       font-weight: 600;
-      white-space: nowrap;
+      white-space: normal;
     }
     .tag-chip .remove-tag {
       background: none; border: none; cursor: pointer;
@@ -659,7 +659,7 @@
       cursor: pointer;
       border-bottom: 2px solid transparent;
       transition: color 0.15s, border-color 0.15s;
-      white-space: nowrap;
+      white-space: normal;
     }
     .mobile-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
 
@@ -935,9 +935,9 @@
       <div id="preview-toolbar">
         <strong>Live Preview</strong>
         <div id="preview-device-btns">
-          <button class="device-btn active" data-device="desktop" title="Desktop view">🖥 Desktop</button>
-          <button class="device-btn" data-device="tablet" title="Tablet view">📱 Tablet</button>
-          <button class="device-btn" data-device="mobile" title="Mobile view">📲 Mobile</button>
+          <button class="device-btn active" data-device="desktop" title="Desktop view"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg> Desktop</button>
+          <button class="device-btn" data-device="tablet" title="Tablet view"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg> Tablet</button>
+          <button class="device-btn" data-device="mobile" title="Mobile view"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg> Mobile</button>
         </div>
         <!-- Only visible on mobile overlay -->
         <button class="preview-close-btn icon-btn" id="preview-close-btn"

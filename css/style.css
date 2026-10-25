@@ -388,7 +388,7 @@ pre {
     box-shadow var(--transition),
     transform var(--transition),
     opacity var(--transition);
-  white-space: nowrap;
+  white-space: normal;
   user-select: none;
   text-decoration: none;
   line-height: 1.4;
@@ -762,7 +762,7 @@ select.form-control {
 }
 
 .form-error::before {
-  content: '⚠';
+  content: '!';
   font-size: 0.75rem;
 }
 
@@ -793,7 +793,7 @@ select.form-control {
   border: 1.5px solid var(--border);
   color: var(--secondary-text);
   font-size: 0.875rem;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .input-group-text:first-child {
@@ -891,7 +891,7 @@ select.form-control {
   font-weight: 600;
   border-radius: var(--radius-full);
   line-height: 1.4;
-  white-space: nowrap;
+  white-space: normal;
   letter-spacing: 0.01em;
 }
 
@@ -1602,7 +1602,7 @@ select.form-control {
   background-color: var(--light-gray);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
-  white-space: nowrap;
+  white-space: normal;
   line-height: 1.4;
   transition: background-color var(--transition), color var(--transition), border-color var(--transition);
 }
@@ -1629,7 +1629,7 @@ select.form-control {
   background-color: var(--light-gray);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .tag-removable-btn {
@@ -1709,7 +1709,7 @@ select.form-control {
   transition: background-color var(--transition);
   text-align: left;
   text-decoration: none;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .dropdown-item:hover {
@@ -1774,7 +1774,7 @@ select.form-control {
   border-bottom: 2px solid transparent;
   margin-bottom: -2px;
   cursor: pointer;
-  white-space: nowrap;
+  white-space: normal;
   transition: color var(--transition), border-color var(--transition);
   background: none;
   border-top: none;
@@ -1953,14 +1953,14 @@ select.form-control {
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
+  white-space: normal;
   border: 0;
 }
 
 .truncate {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .line-clamp-2 {

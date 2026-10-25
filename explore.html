@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Explore Portfolios – PortfolioHub</title>
-  <link rel="icon" href="assets/favicon.ico" type="image/x-icon" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/explore.css" />
 </head>
@@ -138,7 +138,7 @@
 
       <!-- Empty State -->
       <div class="explore-empty" id="explore-empty" style="display:none;">
-        <div class="explore-empty-icon">🔍</div>
+        <div class="explore-empty-icon"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></div>
         <h3>No portfolios found</h3>
         <p>Try adjusting your search or filter criteria.</p>
         <button class="btn btn-outline" id="explore-reset-btn">Clear Filters</button>
@@ -156,13 +156,9 @@
 
   <script src="js/config.js"></script>
   <script src="js/navigation.js"></script>
- <script type="module">
-  import { initNavigation } from './js/navigation.js';
-  import { init as initPage } from './js/community.js'; // (or explore.js / templates.js)
-  document.addEventListener('DOMContentLoaded', () => {
-    initNavigation();
-    initPage();
-  });
-</script>
+  <script type="module">
+    import { init } from './js/explore.js';
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
 </body>
 </html>

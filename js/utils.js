@@ -88,7 +88,7 @@ function ensureToastStyles() {
 const TOAST_ICONS = {
   success: '✓',
   error:   '✕',
-  warning: '⚠',
+  warning: '!',
   info:    'ℹ'
 };
 

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Create Account — PortfolioHub</title>
-  <link rel="icon" href="assets/favicon.ico" type="image/x-icon" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/auth.css" />
 </head>
@@ -18,7 +18,7 @@
 
         <!-- Logo -->
         <a href="index.html" class="auth-logo">
-          <span class="auth-logo-icon">🚀</span>
+          <span class="auth-logo-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 9h18"/><path d="M9 21V9"/></svg></span>
           <span class="auth-logo-text">PortfolioHub</span>
         </a>
 
@@ -28,7 +28,7 @@
 
         <!-- Error Banner -->
         <div id="auth-error" class="auth-error" role="alert" aria-live="polite" hidden>
-          <span class="auth-error-icon">⚠️</span>
+          <span class="auth-error-icon"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9L2 18a2 2 0 0 0 1.7 3h16.6A2 2 0 0 0 22 18L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span>
           <span id="auth-error-msg"></span>
         </div>
 
@@ -157,21 +157,6 @@
             <span class="field-error" id="confirm-error" aria-live="polite"></span>
           </div>
 
-          <!-- Terms Checkbox -->
-          <div class="form-group form-group--check">
-            <label class="checkbox-label">
-              <input type="checkbox" id="terms" name="terms" class="checkbox-input" required />
-              <span class="checkbox-custom"></span>
-              <span class="checkbox-text">
-                I agree to the
-                <a href="terms.html" class="auth-link" target="_blank">Terms of Service</a>
-                and
-                <a href="privacy.html" class="auth-link" target="_blank">Privacy Policy</a>
-              </span>
-            </label>
-            <span class="field-error" id="terms-error" aria-live="polite"></span>
-          </div>
-
           <!-- Submit -->
           <button type="submit" id="signup-btn" class="btn btn-primary btn-full btn-auth">
             <span class="btn-text">Create Account</span>
@@ -200,28 +185,28 @@
 
         <ul class="feature-list">
           <li class="feature-item">
-            <span class="feature-icon">⚡</span>
+            <span class="feature-icon"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg></span>
             <div>
               <strong>Launch in minutes</strong>
               <p>Drag-and-drop builder with beautiful templates ready to go.</p>
             </div>
           </li>
           <li class="feature-item">
-            <span class="feature-icon">🎨</span>
+            <span class="feature-icon"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="8" cy="10" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/></svg></span>
             <div>
               <strong>Fully customizable</strong>
               <p>Colors, fonts, layouts — make it uniquely yours.</p>
             </div>
           </li>
           <li class="feature-item">
-            <span class="feature-icon">📊</span>
+            <span class="feature-icon"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg></span>
             <div>
               <strong>Built-in analytics</strong>
               <p>See who's viewing your portfolio and where they're from.</p>
             </div>
           </li>
           <li class="feature-item">
-            <span class="feature-icon">🔗</span>
+            <span class="feature-icon"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></span>
             <div>
               <strong>Custom domain</strong>
               <p>Connect your own domain for a truly professional presence.</p>

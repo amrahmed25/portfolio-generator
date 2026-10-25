@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Community – PortfolioHub</title>
-  <link rel="icon" href="assets/favicon.ico" type="image/x-icon" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/community.css" />
 </head>
@@ -102,7 +102,7 @@
 
       <!-- Empty State -->
       <div id="posts-empty" class="empty-state" style="display:none;">
-        <div class="empty-state-icon">💬</div>
+        <div class="empty-state-icon"><svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
         <h3>No posts found</h3>
         <p>Be the first to share something with the community!</p>
       </div>
@@ -149,11 +149,11 @@
       <div class="sidebar-widget guidelines-widget">
         <h3 class="sidebar-widget-title">Community Guidelines</h3>
         <ul class="guidelines-list">
-          <li>✅ Share genuine expertise</li>
-          <li>✅ Be respectful &amp; supportive</li>
-          <li>✅ Promote your services honestly</li>
-          <li>❌ No spam or repeated posts</li>
-          <li>❌ No misleading content</li>
+          <li> Share genuine expertise</li>
+          <li> Be respectful &amp; supportive</li>
+          <li> Promote your services honestly</li>
+          <li> No spam or repeated posts</li>
+          <li> No misleading content</li>
         </ul>
       </div>
     </aside>
@@ -231,9 +231,9 @@
           <!-- Link Portfolio Toggle -->
           <div class="form-group">
             <label class="toggle-label">
-              <input type="checkbox" id="link-portfolio-toggle" class="toggle-input" checked />
+              <input type="checkbox" id="link-portfolio-toggle" class="toggle-input" />
               <span class="toggle-track"><span class="toggle-thumb"></span></span>
-              <span class="toggle-text">Link to my portfolio</span>
+              <span class="toggle-text">Link my published portfolio to this post</span>
             </label>
           </div>
 
@@ -275,12 +275,8 @@
   <script src="js/config.js"></script>
   <script src="js/navigation.js"></script>
   <script type="module">
-  import { initNavigation } from './js/navigation.js';
-  import { init as initPage } from './js/community.js'; // (or explore.js / templates.js)
-  document.addEventListener('DOMContentLoaded', () => {
-    initNavigation();
-    initPage();
-  });
-</script>
+    import { init } from './js/community.js';
+    document.addEventListener('DOMContentLoaded', init);
+  </script>
 </body>
 </html>

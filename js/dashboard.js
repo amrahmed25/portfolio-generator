@@ -7,6 +7,7 @@
 import supabase from './supabase-client.js';
 import { showToast, createModal, copyToClipboard, formatRelativeDate } from './utils.js';
 import { requireAuth } from './supabase-client.js';
+import { createPortfolio as createPortfolioRecord, publicUrl } from './portfolio-service.js';
 
 /* ─────────────────────────────────────────────
    GLOBALS
@@ -18,19 +19,27 @@ let _allPortfolios = [];
    TEMPLATE GRADIENTS (fallback covers)
    ───────────────────────────────────────────── */
 const TEMPLATE_GRADIENTS = {
-  minimal:    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-  modern:     'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-  creative:   'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-  developer:  'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-  designer:   'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-  corporate:  'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
-  dark:       'linear-gradient(135deg, #2d3748 0%, #4a5568 100%)',
+  reference:  'linear-gradient(135deg, #2563EB 0%, #1E3A8A 100%)',
+  developer:  'linear-gradient(135deg, #0F172A 0%, #1E3A8A 100%)',
+  creative:   'linear-gradient(135deg, #DBEAFE 0%, #93C5FD 100%)',
+  freelancer: 'linear-gradient(135deg, #EFF6FF 0%, #BFDBFE 100%)',
   default:    'linear-gradient(135deg, #2563EB 0%, #1E3A8A 100%)',
 };
 
-function _getGradient(templateId) {
-  if (!templateId) return TEMPLATE_GRADIENTS.default;
-  const key = templateId.toLowerCase();
+const TEMPLATE_LABELS = {
+  reference: 'Reference',
+  developer: 'Developer',
+  creative: 'Creative',
+  freelancer: 'Freelancer',
+};
+
+function _templateLabel(id) {
+  return TEMPLATE_LABELS[id] || TEMPLATE_LABELS.reference;
+}
+
+function _getGradient(templateName) {
+  if (!templateName) return TEMPLATE_GRADIENTS.default;
+  const key = templateName.toLowerCase();
   return TEMPLATE_GRADIENTS[key] || TEMPLATE_GRADIENTS.default;
 }
 
@@ -69,17 +78,20 @@ function _showStatSkeletons() {
    ───────────────────────────────────────────── */
 async function loadStats(userId) {
   try {
+    // Count portfolios
     const { count: totalPortfolios } = await supabase
       .from('portfolios')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId);
 
+    // Count published
     const { count: publishedCount } = await supabase
       .from('portfolios')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
       .eq('is_published', true);
 
+    // Total views (sum of view_count)
     const { data: viewData } = await supabase
       .from('portfolios')
       .select('view_count')
@@ -87,6 +99,7 @@ async function loadStats(userId) {
 
     const totalViews = (viewData || []).reduce((sum, p) => sum + (p.view_count || 0), 0);
 
+    // Community posts
     let communityPosts = 0;
     try {
       const { count } = await supabase
@@ -94,7 +107,7 @@ async function loadStats(userId) {
         .select('id', { count: 'exact', head: true })
         .eq('user_id', userId);
       communityPosts = count || 0;
-    } catch (_) {}
+    } catch (_) { /* table may not exist */ }
 
     _renderStats({
       total: totalPortfolios || 0,
@@ -136,13 +149,14 @@ async function loadPortfolios(userId) {
 }
 
 /* ─────────────────────────────────────────────
-   RENDER PORTFOLIO CARD
+   RENDER PORTFOLIO CARD (safe DOM manipulation)
    ───────────────────────────────────────────── */
 function renderPortfolioCard(portfolio) {
   const card = document.createElement('div');
   card.className = 'portfolio-card';
   card.dataset.portfolioId = portfolio.id;
 
+  // ── Cover ──
   const cover = document.createElement('div');
   cover.className = 'portfolio-card-cover';
   if (portfolio.cover_url) {
@@ -157,35 +171,36 @@ function renderPortfolioCard(portfolio) {
     cover.appendChild(img);
   } else {
     cover.style.background = _getGradient(portfolio.template_id);
-    const icon = document.createElement('div');
-    icon.className = 'portfolio-cover-icon';
-    icon.textContent = '🚀';
-    cover.appendChild(icon);
   }
 
+  // Template badge on cover
   if (portfolio.template_id) {
     const badge = document.createElement('span');
     badge.className = 'portfolio-template-badge';
-    badge.textContent = portfolio.template_id;
+    badge.textContent = _templateLabel(portfolio.template_id);
     cover.appendChild(badge);
   }
 
   card.appendChild(cover);
 
+  // ── Body ──
   const body = document.createElement('div');
   body.className = 'portfolio-card-body';
 
+  // Published badge
   const statusBadge = document.createElement('span');
   statusBadge.className = `portfolio-status-badge ${portfolio.is_published ? 'published' : 'draft'}`;
   statusBadge.id = `status-badge-${portfolio.id}`;
   statusBadge.textContent = portfolio.is_published ? '● Published' : '○ Draft';
   body.appendChild(statusBadge);
 
+  // Title
   const title = document.createElement('h3');
   title.className = 'portfolio-card-title';
   title.textContent = portfolio.title || 'Untitled Portfolio';
   body.appendChild(title);
 
+  // Meta row
   const meta = document.createElement('div');
   meta.className = 'portfolio-card-meta';
 
@@ -204,9 +219,11 @@ function renderPortfolioCard(portfolio) {
   meta.appendChild(dateEl);
   body.appendChild(meta);
 
+  // ── Action Buttons ──
   const actions = document.createElement('div');
   actions.className = 'portfolio-card-actions';
 
+  // Edit
   const editBtn = document.createElement('a');
   editBtn.href = `portfolio-builder.html?id=${encodeURIComponent(portfolio.id)}`;
   editBtn.className = 'card-action-btn btn-edit';
@@ -214,14 +231,14 @@ function renderPortfolioCard(portfolio) {
   editBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Edit`;
   actions.appendChild(editBtn);
 
+  // View live (only meaningful once published)
   const previewBtn = document.createElement('a');
-  previewBtn.href = `public-portfolio.html?u=${encodeURIComponent(portfolio.slug || portfolio.id)}`;
-  previewBtn.target = '_blank';
   previewBtn.className = 'card-action-btn btn-preview';
-  previewBtn.title = 'Preview Portfolio';
-  previewBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> Preview`;
+  previewBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> <span>View</span>`;
+  applyViewState(previewBtn, portfolio.slug, portfolio.is_published);
   actions.appendChild(previewBtn);
 
+  // Publish/Unpublish
   const publishBtn = document.createElement('button');
   publishBtn.className = `card-action-btn btn-publish${portfolio.is_published ? ' btn-unpublish' : ''}`;
   publishBtn.id = `publish-btn-${portfolio.id}`;
@@ -232,6 +249,7 @@ function renderPortfolioCard(portfolio) {
   publishBtn.addEventListener('click', () => togglePublish(portfolio.id, portfolio.is_published));
   actions.appendChild(publishBtn);
 
+  // Delete
   const deleteBtn = document.createElement('button');
   deleteBtn.className = 'card-action-btn btn-delete';
   deleteBtn.title = 'Delete Portfolio';
@@ -245,6 +263,9 @@ function renderPortfolioCard(portfolio) {
   return card;
 }
 
+/* ─────────────────────────────────────────────
+   RENDER PORTFOLIOS GRID
+   ───────────────────────────────────────────── */
 function _renderPortfolios(portfolios) {
   const grid = document.getElementById('portfolios-grid');
   const emptyState = document.getElementById('portfolios-empty');
@@ -267,7 +288,10 @@ function _renderPortfolios(portfolios) {
   });
 }
 
-async function createPortfolio(title, templateId = 'minimal') {
+/* ─────────────────────────────────────────────
+   CREATE PORTFOLIO
+   ───────────────────────────────────────────── */
+async function createPortfolio(title, templateId = 'reference') {
   if (!_currentUser) {
     showToast('You must be logged in.', 'error');
     return;
@@ -276,49 +300,34 @@ async function createPortfolio(title, templateId = 'minimal') {
     showToast('Please enter a portfolio title.', 'error');
     return;
   }
-
-  const baseSlug = title.trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .substring(0, 40);
-  const userPrefix = _currentUser.id.substring(0, 6);
-  const randomSuffix = Math.random().toString(36).substring(2, 6);
-  const slug = `${userPrefix}-${baseSlug}-${randomSuffix}`;
-
   try {
-    const { data, error } = await supabase
-      .from('portfolios')
-      .insert({
-        user_id: _currentUser.id,
-        title: title.trim(),
-        slug,
-        template_id: templateId,
-        is_published: false,
-        view_count: 0,
-      })
-      .select('id')
-      .single();
-
-    if (error) throw error;
-
-    showToast('Portfolio created! Redirecting to builder...', 'success');
-
+    const id = await createPortfolioRecord({ user: _currentUser, title, templateId });
+    showToast('Portfolio created! Opening the builder...', 'success');
     setTimeout(() => {
-      window.location.href = `portfolio-builder.html?id=${encodeURIComponent(data.id)}`;
-    }, 800);
+      window.location.href = `portfolio-builder.html?id=${encodeURIComponent(id)}`;
+    }, 600);
   } catch (err) {
     console.error('[Dashboard] Create portfolio error:', err);
     showToast(err.message || 'Failed to create portfolio.', 'error');
   }
 }
 
+/* ─────────────────────────────────────────────
+   DELETE PORTFOLIO
+   ───────────────────────────────────────────── */
 async function deletePortfolio(portfolioId) {
+  // Find the portfolio title for the modal
   const portfolio = _allPortfolios.find(p => p.id === portfolioId);
   const title = portfolio?.title || 'this portfolio';
 
-  const confirmed = confirm(`Are you sure you want to delete "${title}"? This action cannot be undone.`);
+  const confirmed = await createModal({
+    title: 'Delete Portfolio',
+    message: `Are you sure you want to delete "<strong>${_escapeHtml(title)}</strong>"? This action cannot be undone.`,
+    confirmText: 'Delete',
+    cancelText: 'Cancel',
+    type: 'danger',
+  });
+
   if (!confirmed) return;
 
   try {
@@ -330,8 +339,10 @@ async function deletePortfolio(portfolioId) {
 
     if (error) throw error;
 
+    // Remove from local array
     _allPortfolios = _allPortfolios.filter(p => p.id !== portfolioId);
 
+    // Remove card from DOM with animation
     const card = document.querySelector(`[data-portfolio-id="${portfolioId}"]`);
     if (card) {
       card.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
@@ -343,11 +354,38 @@ async function deletePortfolio(portfolioId) {
       }, 300);
     }
 
+    // Update stats
     loadStats(_currentUser.id);
     showToast('Portfolio deleted successfully.', 'success');
   } catch (err) {
     console.error('[Dashboard] Delete portfolio error:', err);
     showToast(err.message || 'Failed to delete portfolio.', 'error');
+  }
+}
+
+/* ─────────────────────────────────────────────
+   TOGGLE PUBLISH
+   ───────────────────────────────────────────── */
+/**
+ * Points the "View" button at the public page when the portfolio is published,
+ * otherwise shows it as unavailable instead of linking to a page that would 404.
+ */
+function applyViewState(btn, slug, isPublished) {
+  if (isPublished && slug) {
+    btn.href = publicUrl(slug);
+    btn.target = '_blank';
+    btn.rel = 'noopener noreferrer';
+    btn.removeAttribute('aria-disabled');
+    btn.title = 'Open the public page';
+    btn.style.opacity = '';
+    btn.style.pointerEvents = '';
+  } else {
+    btn.removeAttribute('href');
+    btn.removeAttribute('target');
+    btn.setAttribute('aria-disabled', 'true');
+    btn.title = 'Publish this portfolio to get a public link';
+    btn.style.opacity = '0.5';
+    btn.style.pointerEvents = 'none';
   }
 }
 
@@ -363,15 +401,18 @@ async function togglePublish(portfolioId, currentState) {
 
     if (error) throw error;
 
+    // Update local array
     const idx = _allPortfolios.findIndex(p => p.id === portfolioId);
     if (idx !== -1) _allPortfolios[idx].is_published = newState;
 
+    // Update status badge
     const badge = document.getElementById(`status-badge-${portfolioId}`);
     if (badge) {
       badge.textContent = newState ? '● Published' : '○ Draft';
       badge.className = `portfolio-status-badge ${newState ? 'published' : 'draft'}`;
     }
 
+    // Update publish button
     const btn = document.getElementById(`publish-btn-${portfolioId}`);
     if (btn) {
       btn.innerHTML = newState
@@ -380,18 +421,42 @@ async function togglePublish(portfolioId, currentState) {
       btn.title = newState ? 'Unpublish' : 'Publish';
       btn.className = `card-action-btn btn-publish${newState ? ' btn-unpublish' : ''}`;
 
+      // Update the onclick reference to the new state
       btn.onclick = null;
       btn.addEventListener('click', () => togglePublish(portfolioId, newState));
     }
 
+    // Update the View button
+    const viewBtn = document.querySelector(`[data-portfolio-id="${portfolioId}"] .btn-preview`);
+    const slug = (_allPortfolios.find(p => p.id === portfolioId) || {}).slug;
+    if (viewBtn) applyViewState(viewBtn, slug, newState);
+
+    // Update stats
     loadStats(_currentUser.id);
-    showToast(newState ? 'Portfolio published! 🎉' : 'Portfolio unpublished.', 'success');
+    showToast(newState ? 'Portfolio published.' : 'Portfolio unpublished.', 'success');
   } catch (err) {
     console.error('[Dashboard] Toggle publish error:', err);
     showToast(err.message || 'Failed to update portfolio.', 'error');
   }
 }
 
+/* ─────────────────────────────────────────────
+   COPY PORTFOLIO URL
+   ───────────────────────────────────────────── */
+async function copyPortfolioUrl(slug) {
+  const url = publicUrl(slug);
+  try {
+    await copyToClipboard(url);
+    showToast('Portfolio link copied to clipboard.', 'success');
+  } catch (err) {
+    showToast('Failed to copy URL. Please copy it manually.', 'error');
+    console.error('[Dashboard] Copy URL error:', err);
+  }
+}
+
+/* ─────────────────────────────────────────────
+   CREATE PORTFOLIO MODAL
+   ───────────────────────────────────────────── */
 function initCreatePortfolioModal() {
   const modal = document.getElementById('create-portfolio-modal');
   const openBtns = document.querySelectorAll('[data-action="create-portfolio"]');
@@ -419,14 +484,17 @@ function initCreatePortfolioModal() {
   if (closeBtn) closeBtn.addEventListener('click', closeModal);
   if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
 
+  // Close on backdrop click
   modal.addEventListener('click', (e) => {
     if (e.target === modal) closeModal();
   });
 
+  // Close on Escape
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modal.classList.contains('open')) closeModal();
   });
 
+  // Form submission
   if (form) {
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -457,6 +525,9 @@ function initCreatePortfolioModal() {
   }
 }
 
+/* ─────────────────────────────────────────────
+   UPDATE WELCOME MESSAGE
+   ───────────────────────────────────────────── */
 function _updateWelcomeMessage(user, profile) {
   const welcomeEl = document.getElementById('welcome-name');
   if (!welcomeEl) return;
@@ -466,10 +537,14 @@ function _updateWelcomeMessage(user, profile) {
     || user.email?.split('@')[0]
     || 'there';
 
+  // Get first name only
   const firstName = name.split(' ')[0];
   welcomeEl.textContent = firstName;
 }
 
+/* ─────────────────────────────────────────────
+   SIDEBAR USER INFO
+   ───────────────────────────────────────────── */
 function _renderSidebarUser(user, profile) {
   const avatarImg = document.getElementById('sidebar-avatar-img');
   const avatarInitials = document.getElementById('sidebar-avatar-initials');
@@ -511,6 +586,9 @@ function _renderSidebarUser(user, profile) {
   }
 }
 
+/* ─────────────────────────────────────────────
+   SIDEBAR TOGGLE (mobile)
+   ───────────────────────────────────────────── */
 function _initSidebarToggle() {
   const toggleBtn = document.getElementById('sidebar-toggle-btn');
   const sidebar = document.getElementById('dashboard-sidebar');
@@ -537,6 +615,9 @@ function _initSidebarToggle() {
   if (overlay) overlay.addEventListener('click', closeSidebar);
 }
 
+/* ─────────────────────────────────────────────
+   SIDEBAR LOGOUT
+   ───────────────────────────────────────────── */
 function _initSidebarLogout() {
   const logoutBtn = document.getElementById('sidebar-logout-btn');
   if (!logoutBtn) return;
@@ -552,8 +633,11 @@ function _initSidebarLogout() {
   });
 }
 
+/* ─────────────────────────────────────────────
+   ACTIVE SIDEBAR LINK
+   ───────────────────────────────────────────── */
 function _setActiveSidebarLink() {
-  const currentPage = 'dashboard';
+  const currentPage = 'dashboard'; // We're on dashboard
   document.querySelectorAll('.sidebar-nav-link').forEach(link => {
     if (link.dataset.page === currentPage) {
       link.classList.add('active');
@@ -561,6 +645,9 @@ function _setActiveSidebarLink() {
   });
 }
 
+/* ─────────────────────────────────────────────
+   RECENT ACTIVITY
+   ───────────────────────────────────────────── */
 function _renderRecentActivity(portfolios) {
   const container = document.getElementById('recent-activity-list');
   if (!container) return;
@@ -570,6 +657,7 @@ function _renderRecentActivity(portfolios) {
     return;
   }
 
+  // Show last 5 portfolio updates as activity
   const recent = [...portfolios]
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at))
     .slice(0, 5);
@@ -581,7 +669,7 @@ function _renderRecentActivity(portfolios) {
 
     const icon = document.createElement('div');
     icon.className = 'activity-icon';
-    icon.textContent = p.is_published ? '🌐' : '📝';
+    icon.innerHTML = p.is_published ? '<svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>' : '<svg class="ph-icon" width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
 
     const info = document.createElement('div');
     info.className = 'activity-info';
@@ -611,6 +699,9 @@ function _renderRecentActivity(portfolios) {
   });
 }
 
+/* ─────────────────────────────────────────────
+   SEARCH / FILTER PORTFOLIOS
+   ───────────────────────────────────────────── */
 function _initPortfolioSearch() {
   const searchInput = document.getElementById('portfolio-search');
   const filterSelect = document.getElementById('portfolio-filter');
@@ -636,23 +727,43 @@ function _initPortfolioSearch() {
     _renderPortfolios(filtered);
   }
 
-  if (searchInput) searchInput.addEventListener('input', applyFilters);
-  if (filterSelect) filterSelect.addEventListener('change', applyFilters);
+  if (searchInput) {
+    searchInput.addEventListener('input', applyFilters);
+  }
+  if (filterSelect) {
+    filterSelect.addEventListener('change', applyFilters);
+  }
 }
 
+/* ─────────────────────────────────────────────
+   ESCAPE HTML HELPER
+   ───────────────────────────────────────────── */
+function _escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+
+/* ─────────────────────────────────────────────
+   MAIN LOAD DASHBOARD
+   ───────────────────────────────────────────── */
 async function loadDashboard() {
+  // 1. Auth guard
   const user = await requireAuth();
   _currentUser = user;
 
+  // 2. Show loading skeletons
   _showStatSkeletons();
   _showPortfolioSkeletons(3);
 
+  // 3. Init UI components
   _initSidebarToggle();
   _initSidebarLogout();
   _setActiveSidebarLink();
   initCreatePortfolioModal();
   _initPortfolioSearch();
 
+  // 4. Load profile
   let profile = null;
   try {
     const { data } = await supabase
@@ -661,11 +772,17 @@ async function loadDashboard() {
       .eq('id', user.id)
       .single();
     profile = data;
-  } catch (_) {}
+  } catch (_) { /* profile may not exist */ }
 
+  // 5. Update UI with user info
   _updateWelcomeMessage(user, profile);
   _renderSidebarUser(user, profile);
 
+  // There is no paid tier, so the pro badge stays hidden.
+  const proBadge = document.getElementById('sidebar-pro-badge');
+  if (proBadge) proBadge.style.display = 'none';
+
+  // 6. Load portfolios and stats concurrently
   try {
     const [portfolios] = await Promise.all([
       loadPortfolios(user.id),
@@ -695,6 +812,7 @@ export {
   createPortfolio,
   deletePortfolio,
   togglePublish,
+  copyPortfolioUrl,
   loadPortfolios,
   renderPortfolioCard,
   loadStats,
