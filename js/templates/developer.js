@@ -4,7 +4,7 @@
  * file tab. Skills render as a JSON block with meters, projects as repo rows,
  * experience as a commit-style log. Dark by default. All content comes from the model `m`.
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 import { firstName, initialsOf, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, navControls } from './parts.js';
 
@@ -44,7 +44,7 @@ const BODY = {
     const facts = [
       ['location', m.location ? esc(m.location) : ''],
       ['company', m.currentCompany ? esc(m.currentCompany) : ''],
-      ['email', m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : ''],
+      ['email', m.email ? `<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a>` : ''],
       ['website', site ? `<a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a>` : '']
     ].filter(f => f[1]);
     return `
@@ -108,7 +108,7 @@ const BODY = {
 
   services: m => `
     <div class="dev-svcs">${m.services.map(s => {
-      const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
+      const cta = safeUrl(normalizeUrl(s.contact_url)) || mailtoHref(m.email);
       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
       return `
       <article class="dev-svc">

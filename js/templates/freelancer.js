@@ -4,7 +4,7 @@
  * cards right after the hero, inset-image project cards, expertise meters, and a
  * contact band with the form. Stats are computed from the user's own data.
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 import { firstName, initialsOf, truncate, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, yearsOfExperience, navControls } from './parts.js';
 
@@ -31,7 +31,7 @@ const HEAD = {
 const BODY = {
   services: m => `
     <div class="fl-services">${m.services.map(s => {
-      const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
+      const cta = safeUrl(normalizeUrl(s.contact_url)) || mailtoHref(m.email);
       const img = safeUrl(s.image_url);
       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
       return `
@@ -66,7 +66,7 @@ const BODY = {
     const facts = [
       m.location ? `<li>${icon('pin', 17)}<span>${esc(m.location)}</span></li>` : '',
       m.currentCompany ? `<li>${icon('briefcase', 17)}<span>${esc(m.currentCompany)}</span></li>` : '',
-      m.email ? `<li>${icon('mail', 17)}<a href="mailto:${esc(m.email)}">${esc(m.email)}</a></li>` : '',
+      m.email ? `<li>${icon('mail', 17)}<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></li>` : '',
       site ? `<li>${icon('globe', 17)}<a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a></li>` : ''
     ].filter(Boolean);
     return `
@@ -146,7 +146,7 @@ export function render(m) {
   const first = firstName(m);
   const navKeys = present.filter(k => k !== 'contact');
   const links = navKeys.map(k => `<a href="#${k}">${NAV[k]}</a>`).join('');
-  const hireHref = hasSection(m, 'contact') ? '#contact' : (m.email ? `mailto:${esc(m.email)}` : '');
+  const hireHref = hasSection(m, 'contact') ? '#contact' : esc(mailtoHref(m.email));
   const years = yearsOfExperience(m);
   const stats = [
     [years > 0 ? String(years) : '', 'Years of experience'],

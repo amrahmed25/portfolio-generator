@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/u/:handle/:number(\\d+)",
+      "destination": "/public-portfolio.html?u=:handle&n=:number"
+    },
+    {
       "source": "/u/:slug",
       "destination": "/public-portfolio.html?u=:slug"
     }

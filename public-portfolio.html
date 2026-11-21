@@ -2,12 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <!-- Clean URLs (/u/<slug>) are rewritten server-side, so relative asset paths must be
+  <!-- Clean URLs (/u/<slug> and /u/<handle>/<number>) are rewritten server-side, so relative asset paths must be
        resolved from the site root, not from /u/. This must run before any asset is requested. -->
   <script>
 (function () {
   var path = window.location.pathname;
-  var match = path.match(/^(.*\/)u\/[^/]+\/?$/);
+  var match = path.match(/^(.*\/)u\/[^/]+(?:\/\d+)?\/?$/);
   var base = match ? match[1] : new URL('.', window.location.href).pathname;
 
   document.write('<base href="' + base + '">');

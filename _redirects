@@ -2,6 +2,7 @@
 # Maps clean /u/:slug URLs to the public-portfolio.html page
 # The 200 status means a rewrite (not a redirect) — the browser URL stays clean
 
+/u/:handle/:number  /public-portfolio.html?u=:handle&n=:number  200
 /u/:slug  /public-portfolio.html?u=:slug  200
 
 # Catch-all: send any other unmatched paths to the index (SPA-style fallback)

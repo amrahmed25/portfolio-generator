@@ -25,6 +25,20 @@ export function safeUrl(url, { allowMail = false, allowTel = false } = {}) {
 }
 
 
+/**
+ * Strict "name@domain.tld" check shared by the renderer and the mailto builder.
+ * Rejects whitespace, quotes, angle brackets and list separators so a value can
+ * never break out of an HTML attribute or smuggle extra recipients into a mailto: URL.
+ */
+export const EMAIL_PATTERN = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
+
+/** Returns "mailto:<address>" for a valid address, otherwise '' (callers then render no link). */
+export function mailtoHref(email) {
+  const v = String(email ?? '').trim();
+  return EMAIL_PATTERN.test(v) ? `mailto:${v}` : '';
+}
+
+
 /** Adds https:// to bare domains typed by users ("github.com/me"). */
 export function normalizeUrl(url) {
   const v = String(url ?? '').trim();

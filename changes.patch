@@ -1,0 +1,1006 @@
+diff --git a/_redirects b/_redirects
+index b8389c6..06e4ca8 100644
+--- a/_redirects
++++ b/_redirects
+@@ -2,6 +2,7 @@
+ # Maps clean /u/:slug URLs to the public-portfolio.html page
+ # The 200 status means a rewrite (not a redirect) — the browser URL stays clean
+ 
++/u/:handle/:number  /public-portfolio.html?u=:handle&n=:number  200
+ /u/:slug  /public-portfolio.html?u=:slug  200
+ 
+ # Catch-all: send any other unmatched paths to the index (SPA-style fallback)
+diff --git a/css/auth.css b/css/auth.css
+index 73967a8..805570c 100644
+--- a/css/auth.css
++++ b/css/auth.css
+@@ -761,3 +761,12 @@
+   .auth-card  { padding: 2rem 1.25rem; }
+   .auth-body--centered { padding: 1.5rem 1rem; }
+ }
++
++/* Helper text under a form field (used by the signup User Handle field) */
++.field-hint {
++  display: block;
++  margin-top: 6px;
++  font-size: 0.8125rem;
++  line-height: 1.4;
++  color: var(--secondary-text, #64748B);
++}
+diff --git a/js/auth.js b/js/auth.js
+index 3bf7345..2a0d9de 100644
+--- a/js/auth.js
++++ b/js/auth.js
+@@ -6,6 +6,7 @@
+ 
+ import supabase from './supabase-client.js';
+ import { showToast, validateEmail, validatePassword } from './utils.js';
++import { validateHandle, checkHandleAvailability } from './handle.js';
+ 
+ // ─────────────────────────────────────────────
+ //  HELPERS
+@@ -27,6 +28,9 @@ function friendlyError(err) {
+   if (raw.includes('email not confirmed')) {
+     return 'Please confirm your email address before signing in.';
+   }
++  if (raw.includes('database error saving new user') || raw.includes('user_handle') || raw.includes('duplicate key')) {
++    return 'We could not create your account. The handle you chose may have just been taken or is not allowed. Please try a different one.';
++  }
+   if (raw.includes('user already registered') || raw.includes('already exists')) {
+     return 'An account with this email already exists. Try signing in instead.';
+   }
+@@ -178,14 +182,22 @@ function renderStrengthMeter(score, label, barPrefix, labelId) {
+ // ─────────────────────────────────────────────
+ 
+ /**
+- * Sign up a new user and create their profile row.
++ * Sign up a new user.
++ *
++ * The profile row is created server-side by the on_auth_user_created trigger
++ * (handle_new_user), which reads full_name, role and user_handle from the auth
++ * metadata below. The browser never inserts into public.profiles itself:
++ * profiles.user_handle is NOT NULL and protected, and the former client-side
++ * upsert always failed anyway (it sent a non-existent "email" column).
++ *
+  * @param {string} email
+  * @param {string} password
+  * @param {string} fullName
+  * @param {string} [role]
++ * @param {string} userHandle  already validated, lowercase
+  * @returns {Promise<{ data: Object|null, error: Object|null }>}
+  */
+-async function signUp(email, password, fullName, role) {
++async function signUp(email, password, fullName, role, userHandle) {
+   const { data, error } = await supabase.auth.signUp({
+     email: email.trim().toLowerCase(),
+     password,
+@@ -193,26 +205,12 @@ async function signUp(email, password, fullName, role) {
+       data: {
+         full_name: fullName.trim(),
+         role: role || null,
++        user_handle: userHandle,
+       },
+     },
+   });
+ 
+   if (error) return { data: null, error };
+-
+-  // Insert into profiles table (best-effort — may already exist via trigger)
+-  if (data?.user) {
+-    await supabase.from('profiles').upsert(
+-      {
+-        id: data.user.id,
+-        full_name: fullName.trim(),
+-        role: role || null,
+-        email: email.trim().toLowerCase(),
+-        created_at: new Date().toISOString(),
+-      },
+-      { onConflict: 'id' }
+-    );
+-  }
+-
+   return { data, error: null };
+ }
+ 
+@@ -412,6 +410,23 @@ async function initSignupPage() {
+     });
+   }
+ 
++  // Handle: format feedback while typing, availability when the field loses focus
++  const handleInput = document.getElementById('user-handle');
++  if (handleInput) {
++    handleInput.addEventListener('input', () => {
++      const v = handleInput.value;
++      // Only show format problems once something is typed; stay quiet on an empty field
++      setFieldError('user-handle-error', v ? validateHandle(v).message : '');
++    });
++    handleInput.addEventListener('blur', async () => {
++      const v = handleInput.value;
++      if (!v || !validateHandle(v).valid) return;
++      if ((await checkHandleAvailability(supabase, v)) === 'taken' && handleInput.value === v) {
++        setFieldError('user-handle-error', 'That handle is already taken. Please choose another.');
++      }
++    });
++  }
++
+   const form = document.getElementById('signup-form');
+   if (!form) return;
+ 
+@@ -421,6 +436,7 @@ async function initSignupPage() {
+     const nameVal     = (document.getElementById('full-name')?.value || '').trim();
+     const emailVal    = (document.getElementById('email')?.value || '').trim();
+     const roleVal     = document.getElementById('role')?.value || '';
++    const handleVal   = document.getElementById('user-handle')?.value || '';
+     const passwordVal = document.getElementById('password')?.value || '';
+     const confirmVal  = document.getElementById('confirm-password')?.value || '';
+ 
+@@ -471,7 +487,14 @@ async function initSignupPage() {
+       setFieldError('confirm-error', '');
+     }
+ 
+-    // Terms
++    // User handle (format first, then availability)
++    const handleCheck = validateHandle(handleVal);
++    if (!handleCheck.valid) {
++      setFieldError('user-handle-error', handleCheck.message);
++      valid = false;
++    } else {
++      setFieldError('user-handle-error', '');
++    }
+ 
+     if (!valid) return;
+ 
+@@ -479,15 +502,31 @@ async function initSignupPage() {
+     const btn = document.getElementById('signup-btn');
+     setButtonLoading(btn, true);
+ 
+-    const { data, error } = await signUp(emailVal, passwordVal, nameVal, roleVal);
++    if ((await checkHandleAvailability(supabase, handleVal)) === 'taken') {
++      setButtonLoading(btn, false);
++      setFieldError('user-handle-error', 'That handle is already taken. Please choose another.');
++      document.getElementById('user-handle')?.focus();
++      return;
++    }
+ 
+-    setButtonLoading(btn, false);
++    const { data, error } = await signUp(emailVal, passwordVal, nameVal, roleVal, handleVal);
+ 
+     if (error) {
++      // Supabase reports a failed profile trigger (e.g. a handle taken a moment ago)
++      // only as a generic "Database error saving new user". Re-check so we can say why.
++      if ((await checkHandleAvailability(supabase, handleVal)) === 'taken') {
++        setButtonLoading(btn, false);
++        setFieldError('user-handle-error', 'That handle was just taken. Please choose another.');
++        document.getElementById('user-handle')?.focus();
++        return;
++      }
++      setButtonLoading(btn, false);
+       showAuthError('auth-error', 'auth-error-msg', friendlyError(error));
+       return;
+     }
+ 
++    setButtonLoading(btn, false);
++
+     // Supabase may require email confirmation — check session
+     const { session: newSession } = await getSession();
+     if (newSession) {
+diff --git a/js/handle.js b/js/handle.js
+new file mode 100644
+index 0000000..586d1bf
+--- /dev/null
++++ b/js/handle.js
+@@ -0,0 +1,67 @@
++/**
++ * handle.js
++ * User-handle rules shared by the signup page.
++ *
++ * IMPORTANT: this is a convenience layer only. PostgreSQL is authoritative:
++ *   - profiles.user_handle is NOT NULL, lowercase, 3-30 chars, ^[a-z0-9]+(-[a-z0-9]+)*$
++ *   - a unique index exists on lower(user_handle)
++ *   - supabase_security_remediation.sql adds the reserved-name check (keep RESERVED_HANDLES
++ *     below in sync with the list in public.enforce_profile_policy() in that file).
++ */
++
++export const HANDLE_MIN = 3;
++export const HANDLE_MAX = 30;
++export const HANDLE_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
++
++/** Names that would collide with site routes/files or look official. Keep in sync with the SQL. */
++export const RESERVED_HANDLES = Object.freeze([
++  'admin', 'administrator', 'api', 'app', 'assets', 'auth', 'community', 'css', 'dashboard',
++  'explore', 'help', 'index', 'js', 'login', 'logout', 'moderator', 'null', 'portfolio',
++  'portfolio-builder', 'portfoliohub', 'profile', 'public-portfolio', 'register', 'reset-password',
++  'root', 'settings', 'signin', 'signup', 'staff', 'support', 'system', 'templates', 'u',
++  'undefined', 'user', 'users', 'www'
++]);
++
++/**
++ * Validates a handle exactly as typed (no silent rewriting).
++ * @returns {{ valid: boolean, message: string }}
++ */
++export function validateHandle(value) {
++  const v = String(value ?? '');
++  if (!v) return { valid: false, message: 'Choose a user handle.' };
++  if (/\s/.test(v)) return { valid: false, message: 'A handle cannot contain spaces. Use hyphens instead.' };
++  if (v.length < HANDLE_MIN) return { valid: false, message: `Your handle must be at least ${HANDLE_MIN} characters.` };
++  if (v.length > HANDLE_MAX) return { valid: false, message: `Your handle can be at most ${HANDLE_MAX} characters.` };
++  if (v !== v.toLowerCase()) return { valid: false, message: 'Use lowercase letters only.' };
++  if (!HANDLE_PATTERN.test(v)) {
++    return {
++      valid: false,
++      message: 'Use only lowercase letters, numbers and single hyphens between them (no leading, trailing or double hyphens).'
++    };
++  }
++  if (RESERVED_HANDLES.includes(v)) return { valid: false, message: 'That handle is reserved. Please choose another.' };
++  return { valid: true, message: '' };
++}
++
++/**
++ * Asks the database whether a (valid, lowercase) handle is already used.
++ * profiles is publicly readable, so this works before sign-in.
++ * Because the DB enforces lowercase handles, an equality match is also the
++ * case-insensitive match.
++ *
++ * @returns {Promise<'available'|'taken'|'unknown'>} 'unknown' = the check itself failed;
++ *          callers must not block signup on it, the database decides.
++ */
++export async function checkHandleAvailability(supabase, handle) {
++  try {
++    const { data, error } = await supabase
++      .from('profiles')
++      .select('id')
++      .eq('user_handle', handle.toLowerCase())
++      .limit(1);
++    if (error) return 'unknown';
++    return data && data.length ? 'taken' : 'available';
++  } catch (_) {
++    return 'unknown';
++  }
++}
+diff --git a/js/portfolio-builder.js b/js/portfolio-builder.js
+index bc798b5..e36bd52 100644
+--- a/js/portfolio-builder.js
++++ b/js/portfolio-builder.js
+@@ -243,7 +243,7 @@ function ensurePreviewFrame() {
+   if (previewFrame) return previewFrame;
+   previewFrame = h('iframe', {
+     id: 'preview-iframe', title: 'Portfolio preview',
+-    sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation',
++    sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols',
+     style: 'width:100%;height:100%;border:0;display:block;background:#fff;'
+   });
+   $('preview-content').replaceChildren(previewFrame);
+@@ -765,13 +765,15 @@ async function saveCore() {
+   if (pErr) throw pErr;
+ 
+   // Do not include avatar_url here so the account profile picture is never modified by the portfolio builder
+-  const { error: prErr } = await supabase.from('profiles').upsert({
+-    id: state.user.id,
++  // UPDATE, not upsert: the row is created by the signup trigger and an upsert would
++  // attempt an INSERT (needs the NOT NULL, protected user_handle). Never send id/role/user_handle.
++  const { data: saved, error: prErr } = await supabase.from('profiles').update({
+     full_name: nullable(p.full_name),
+     location: nullable(p.location),
+     website: nullable(p.website) && normalizeUrlValue(p.website)
+-  }, { onConflict: 'id' });
++  }).eq('id', state.user.id).select('id');
+   if (prErr) throw prErr;
++  if (!saved || !saved.length) throw new Error('Your profile could not be found. Please sign out and sign in again.');
+ }
+ 
+ async function saveList(key) {
+diff --git a/js/portfolio-renderer.js b/js/portfolio-renderer.js
+index 4ab6715..e78b175 100644
+--- a/js/portfolio-renderer.js
++++ b/js/portfolio-renderer.js
+@@ -15,7 +15,8 @@ import {
+   esc,
+   safeUrl,
+   normalizeUrl,
+-  hasSection
++  hasSection,
++  EMAIL_PATTERN
+ } from './templates/helpers.js';
+ 
+ export { esc, safeUrl, normalizeUrl, hasSection };
+@@ -193,7 +194,9 @@ export function normalizeData(raw = {}) {
+       normalizeUrl(profile.website)
+     ),
+ 
+-    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
++    // Same strict pattern the templates use to build mailto: links, so a value that
++    // passes here always yields a working, attribute-safe link (and invalid ones render nothing).
++    email: EMAIL_PATTERN.test(email)
+       ? email
+       : '',
+ 
+diff --git a/js/profile.js b/js/profile.js
+index 8f5a86d..0f0291e 100644
+--- a/js/profile.js
++++ b/js/profile.js
+@@ -88,8 +88,10 @@ async function save(e) {
+   const nullable = v => (v.trim() === '' ? null : v.trim());
+   const site = nullable($('website').value);
+   try {
+-    const { error } = await supabase.from('profiles').upsert({
+-      id: user.id,
++    // UPDATE, not upsert: the profile row is created by the signup trigger, and an
++    // upsert would try to INSERT (which needs the NOT NULL, protected user_handle).
++    // Only editable columns are sent; id, role and user_handle are never written from here.
++    const { data: saved, error } = await supabase.from('profiles').update({
+       full_name: $('full_name').value.trim(),
+       username: nullable($('username').value),
+       title: nullable($('title').value),
+@@ -97,8 +99,9 @@ async function save(e) {
+       location: nullable($('location').value),
+       website: site && (/^[a-z][a-z0-9+.-]*:/i.test(site) ? site : `https://${site}`),
+       avatar_url: avatarUrl || null
+-    }, { onConflict: 'id' });
++    }).eq('id', user.id).select('id');
+     if (error) throw error;
++    if (!saved || !saved.length) throw new Error('Your profile could not be found. Please sign out and sign in again.');
+     dirty = false;
+     showToast('Profile saved.', 'success');
+   } catch (err) {
+diff --git a/js/public-portfolio.js b/js/public-portfolio.js
+index 0c0e782..1e3ddf3 100644
+--- a/js/public-portfolio.js
++++ b/js/public-portfolio.js
+@@ -17,10 +17,23 @@ const CHILD_TABLES = {
+   certifications: 'portfolio_certifications', links: 'portfolio_links'
+ };
+ 
+-function readSlug() {
+-  const m = window.location.pathname.match(/\/u\/([^/]+)\/?$/);
+-  const raw = m ? decodeURIComponent(m[1]) : new URLSearchParams(window.location.search).get('u') || '';
+-  return raw.trim().toLowerCase();
++/**
++ * Works out which portfolio the URL points at. Supported forms:
++ *   /u/<slug>                       (existing links, unchanged)
++ *   /u/<user_handle>/<number>       (handle + per-user portfolio number)
++ *   public-portfolio.html?u=<slug>  or  ?u=<user_handle>&n=<number>   (hosts without rewrites)
++ * Returns { slug } | { handle, number } | null.
++ */
++function readRoute() {
++  const params = new URLSearchParams(window.location.search);
++  const two = window.location.pathname.match(/\/u\/([^/]+)\/(\d+)\/?$/);
++  if (two) return { handle: decodeURIComponent(two[1]).trim().toLowerCase(), number: Number(two[2]) };
++  const one = window.location.pathname.match(/\/u\/([^/]+)\/?$/);
++  const raw = (one ? decodeURIComponent(one[1]) : params.get('u') || '').trim().toLowerCase();
++  if (!raw) return null;
++  const n = params.get('n');
++  if (!one && n !== null && /^\d+$/.test(n)) return { handle: raw, number: Number(n) };
++  return { slug: raw };
+ }
+ 
+ function showState(id) {
+@@ -60,14 +73,23 @@ function renderFrame(model) {
+   frame.id = 'portfolio-frame';
+   frame.title = `${model.name}'s portfolio`;
+   // Same sandbox as the builder preview: scripts run, but cannot touch this page or its session.
+-  frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation');
++  frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols');
+   frame.srcdoc = buildDocument(model, { baseUrl: new URL('./', document.baseURI).href });
+   container.replaceChildren(frame);
+ }
+ 
+-async function loadPortfolio(slug) {
++async function findPortfolio(route) {
++  if (route.slug) return supabase.from('portfolios').select('*').eq('slug', route.slug).maybeSingle();
++  // handle + number: resolve the handle through the public profiles table first
++  const { data: owner, error } = await supabase.from('profiles').select('id').eq('user_handle', route.handle).maybeSingle();
++  if (error) return { data: null, error };
++  if (!owner) return { data: null, error: null };
++  return supabase.from('portfolios').select('*').eq('user_id', owner.id).eq('portfolio_number', route.number).maybeSingle();
++}
++
++async function loadPortfolio(route) {
+   try {
+-    const { data: portfolio, error } = await supabase.from('portfolios').select('*').eq('slug', slug).maybeSingle();
++    const { data: portfolio, error } = await findPortfolio(route);
+     if (error) throw error;
+     if (!portfolio) { hideLoading(); showState('state-not-found'); return; }
+     if (!portfolio.is_published) { hideLoading(); showState('state-not-published'); return; }
+@@ -93,7 +115,7 @@ async function loadPortfolio(slug) {
+     hideLoading();
+ 
+     // Count the view; a failure here must never affect the page.
+-    try { await supabase.rpc('increment_view_count', { portfolio_slug: slug }); } catch (_) { /* ignore */ }
++    try { await supabase.rpc('increment_view_count', { portfolio_slug: portfolio.slug }); } catch (_) { /* ignore */ }
+   } catch (err) {
+     console.error('[PortfolioHub] Failed to load portfolio:', err);
+     hideLoading();
+@@ -119,15 +141,15 @@ function initShare() {
+ 
+ function init() {
+   initShare();
+-  const slug = readSlug();
+-  if (!slug) {
++  const route = readRoute();
++  if (!route) {
+     document.title = 'Portfolio Not Found | PortfolioHub';
+     hideLoading();
+     showState('state-not-found');
+     return;
+   }
+   $('#btn-retry').addEventListener('click', () => window.location.reload());
+-  loadPortfolio(slug);
++  loadPortfolio(route);
+ }
+ 
+ init();
+diff --git a/js/templates/creative.js b/js/templates/creative.js
+index 9aae7a8..18d14b0 100644
+--- a/js/templates/creative.js
++++ b/js/templates/creative.js
+@@ -5,7 +5,7 @@
+  * large case studies; skills are set as typographic text, not chips or bars.
+  * All content comes from the model `m`.
+  */
+-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
++import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+ import { icon, platformIcon } from './icons.js';
+ import { firstName, initialsOf, truncate, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, navControls } from './parts.js';
+ 
+@@ -53,7 +53,7 @@ const BODY = {
+     const facts = [
+       m.location ? `<li>${icon('pin', 15)} ${esc(m.location)}</li>` : '',
+       m.currentCompany ? `<li>${icon('briefcase', 15)} ${esc(m.currentCompany)}</li>` : '',
+-      m.email ? `<li>${icon('mail', 15)} <a href="mailto:${esc(m.email)}">${esc(m.email)}</a></li>` : '',
++      m.email ? `<li>${icon('mail', 15)} <a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></li>` : '',
+       site ? `<li>${icon('globe', 15)} <a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a></li>` : ''
+     ].filter(Boolean);
+     return `
+@@ -85,7 +85,7 @@ const BODY = {
+ 
+   services: m => `
+     <ul class="cre-offers">${m.services.map(s => {
+-      const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
++      const cta = safeUrl(normalizeUrl(s.contact_url)) || mailtoHref(m.email);
+       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
+       return `
+       <li>
+diff --git a/js/templates/developer.js b/js/templates/developer.js
+index 14a56f2..7b9fd0e 100644
+--- a/js/templates/developer.js
++++ b/js/templates/developer.js
+@@ -4,7 +4,7 @@
+  * file tab. Skills render as a JSON block with meters, projects as repo rows,
+  * experience as a commit-style log. Dark by default. All content comes from the model `m`.
+  */
+-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
++import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+ import { icon, platformIcon } from './icons.js';
+ import { firstName, initialsOf, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, navControls } from './parts.js';
+ 
+@@ -44,7 +44,7 @@ const BODY = {
+     const facts = [
+       ['location', m.location ? esc(m.location) : ''],
+       ['company', m.currentCompany ? esc(m.currentCompany) : ''],
+-      ['email', m.email ? `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>` : ''],
++      ['email', m.email ? `<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a>` : ''],
+       ['website', site ? `<a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a>` : '']
+     ].filter(f => f[1]);
+     return `
+@@ -108,7 +108,7 @@ const BODY = {
+ 
+   services: m => `
+     <div class="dev-svcs">${m.services.map(s => {
+-      const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
++      const cta = safeUrl(normalizeUrl(s.contact_url)) || mailtoHref(m.email);
+       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
+       return `
+       <article class="dev-svc">
+diff --git a/js/templates/freelancer.js b/js/templates/freelancer.js
+index 5884fae..f8e85c2 100644
+--- a/js/templates/freelancer.js
++++ b/js/templates/freelancer.js
+@@ -4,7 +4,7 @@
+  * cards right after the hero, inset-image project cards, expertise meters, and a
+  * contact band with the form. Stats are computed from the user's own data.
+  */
+-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
++import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+ import { icon, platformIcon } from './icons.js';
+ import { firstName, initialsOf, truncate, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, yearsOfExperience, navControls } from './parts.js';
+ 
+@@ -31,7 +31,7 @@ const HEAD = {
+ const BODY = {
+   services: m => `
+     <div class="fl-services">${m.services.map(s => {
+-      const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
++      const cta = safeUrl(normalizeUrl(s.contact_url)) || mailtoHref(m.email);
+       const img = safeUrl(s.image_url);
+       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
+       return `
+@@ -66,7 +66,7 @@ const BODY = {
+     const facts = [
+       m.location ? `<li>${icon('pin', 17)}<span>${esc(m.location)}</span></li>` : '',
+       m.currentCompany ? `<li>${icon('briefcase', 17)}<span>${esc(m.currentCompany)}</span></li>` : '',
+-      m.email ? `<li>${icon('mail', 17)}<a href="mailto:${esc(m.email)}">${esc(m.email)}</a></li>` : '',
++      m.email ? `<li>${icon('mail', 17)}<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></li>` : '',
+       site ? `<li>${icon('globe', 17)}<a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a></li>` : ''
+     ].filter(Boolean);
+     return `
+@@ -146,7 +146,7 @@ export function render(m) {
+   const first = firstName(m);
+   const navKeys = present.filter(k => k !== 'contact');
+   const links = navKeys.map(k => `<a href="#${k}">${NAV[k]}</a>`).join('');
+-  const hireHref = hasSection(m, 'contact') ? '#contact' : (m.email ? `mailto:${esc(m.email)}` : '');
++  const hireHref = hasSection(m, 'contact') ? '#contact' : esc(mailtoHref(m.email));
+   const years = yearsOfExperience(m);
+   const stats = [
+     [years > 0 ? String(years) : '', 'Years of experience'],
+diff --git a/js/templates/helpers.js b/js/templates/helpers.js
+index d2b31e5..f1fb218 100644
+--- a/js/templates/helpers.js
++++ b/js/templates/helpers.js
+@@ -25,6 +25,20 @@ export function safeUrl(url, { allowMail = false, allowTel = false } = {}) {
+ }
+ 
+ 
++/**
++ * Strict "name@domain.tld" check shared by the renderer and the mailto builder.
++ * Rejects whitespace, quotes, angle brackets and list separators so a value can
++ * never break out of an HTML attribute or smuggle extra recipients into a mailto: URL.
++ */
++export const EMAIL_PATTERN = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
++
++/** Returns "mailto:<address>" for a valid address, otherwise '' (callers then render no link). */
++export function mailtoHref(email) {
++  const v = String(email ?? '').trim();
++  return EMAIL_PATTERN.test(v) ? `mailto:${v}` : '';
++}
++
++
+ /** Adds https:// to bare domains typed by users ("github.com/me"). */
+ export function normalizeUrl(url) {
+   const v = String(url ?? '').trim();
+diff --git a/js/templates/parts.js b/js/templates/parts.js
+index d8cdb41..cc9a6ef 100644
+--- a/js/templates/parts.js
++++ b/js/templates/parts.js
+@@ -4,7 +4,7 @@
+  * markup, so every template keeps rendering the signed-in user's own data.
+  * The contact form keeps the ids/field names that runtime.js binds to.
+  */
+-import { esc, safeUrl, normalizeUrl } from './helpers.js';
++import { esc, safeUrl, normalizeUrl, mailtoHref } from './helpers.js';
+ import { icon, platformIcon } from './icons.js';
+ 
+ export const extAttr = href => (/^https?:/i.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '');
+@@ -49,7 +49,7 @@ export function safeSite(m) {
+ /** Email, WhatsApp and every valid link, normalised for contact lists. */
+ export function contactItems(m) {
+   const out = [];
+-  if (m.email) out.push({ icon: 'mail', label: 'Email', value: m.email, href: `mailto:${m.email}` });
++  if (m.email && mailtoHref(m.email)) out.push({ icon: 'mail', label: 'Email', value: m.email, href: mailtoHref(m.email) });
+   const wa = String(m.whatsapp || '').replace(/\D/g, '');
+   if (wa) out.push({ icon: 'whatsapp', label: 'WhatsApp', value: m.whatsapp, href: `https://wa.me/${wa}` });
+   (m.links || []).forEach(l => {
+@@ -68,7 +68,7 @@ export function socialsHtml(m, { wrap = 'ph-socials', item = 'ph-social', size =
+     const label = l.label || l.platform;
+     return `<a class="${item}" href="${esc(href)}"${extAttr(href)} aria-label="${esc(label)}" title="${esc(label)}">${platformIcon(l.platform, size)}</a>`;
+   }).filter(Boolean).slice(0, limit);
+-  if (m.email) items.push(`<a class="${item}" href="mailto:${esc(m.email)}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
++  if (m.email) items.push(`<a class="${item}" href="${esc(mailtoHref(m.email))}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
+   return items.length ? `<div class="${wrap}">${items.join('')}</div>` : '';
+ }
+ 
+diff --git a/js/templates/reference.js b/js/templates/reference.js
+index 30fdcc5..cb422a0 100644
+--- a/js/templates/reference.js
++++ b/js/templates/reference.js
+@@ -4,7 +4,7 @@
+  * index.html): Syne + DM Sans, cream/navy palette, light and dark theme.
+  * Styles live in css/templates/reference.css.
+  */
+-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
++import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+ import { icon, platformIcon } from './icons.js';
+ 
+ export const meta = {
+@@ -48,7 +48,7 @@ function renderHero(m) {
+     return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer" class="social-link" title="${esc(label)}" aria-label="${esc(label)}">${platformIcon(l.platform, 18)}</a>`;
+   }).join('');
+   const mail = m.email
+-    ? `<a href="mailto:${esc(m.email)}" class="social-link" title="Email" aria-label="Email">${icon('mail', 18)}</a>` : '';
++    ? `<a href="${esc(mailtoHref(m.email))}" class="social-link" title="Email" aria-label="Email">${icon('mail', 18)}</a>` : '';
+   const portrait = m.avatar
+     ? `<img src="${esc(m.avatar)}" alt="${esc(m.name)}">`
+     : `<div class="hero-initials" aria-hidden="true">${esc(initials(m.name))}</div>`;
+@@ -84,7 +84,7 @@ function renderAbout(m) {
+ 
+   const rows = [['Name', esc(m.name)]];
+   if (m.location) rows.push(['Location', esc(m.location)]);
+-  if (m.email) rows.push(['Email', `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>`]);
++  if (m.email) rows.push(['Email', `<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a>`]);
+   if (m.whatsapp) rows.push(['Phone', `<a href="tel:${esc(m.whatsapp)}">${esc(m.whatsapp)}</a>`]);
+   if (m.website) rows.push(['Website', `<a href="${esc(m.website)}" target="_blank" rel="noopener noreferrer">${esc(m.website.replace(/^https?:\/\//, ''))}</a>`]);
+   m.links.forEach(l => {
+@@ -219,7 +219,7 @@ function renderEducation(m) {
+ 
+ function renderContact(m) {
+   const cards = [];
+-  if (m.email) cards.push(['mail', 'Email', m.email, `mailto:${m.email}`]);
++  if (m.email) cards.push(['mail', 'Email', m.email, mailtoHref(m.email)]);
+   if (m.whatsapp) cards.push(['whatsapp', 'WhatsApp', m.whatsapp, `https://wa.me/${m.whatsapp.replace(/^\+/, '')}`]);
+   m.links.forEach(l => {
+     const href = safeUrl(normalizeUrl(l.url));
+diff --git a/js/templates/shared.js b/js/templates/shared.js
+index af8b6d9..c6e4cbf 100644
+--- a/js/templates/shared.js
++++ b/js/templates/shared.js
+@@ -3,7 +3,7 @@
+  * They emit neutral "ph-*" markup; each template's stylesheet decides the look.
+  * (The Reference template keeps its own markup to stay faithful to the original page.)
+  */
+-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
++import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+ import { icon, platformIcon } from './icons.js';
+ 
+ export const NAV_ORDER = [
+@@ -49,7 +49,7 @@ export function socialRow(m, size = 18) {
+     const label = l.label || l.platform;
+     return `<a class="ph-social" href="${esc(href)}"${ext(href)} aria-label="${esc(label)}" title="${esc(label)}">${platformIcon(l.platform, size)}</a>`;
+   });
+-  if (m.email) items.push(`<a class="ph-social" href="mailto:${esc(m.email)}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
++  if (m.email) items.push(`<a class="ph-social" href="${esc(mailtoHref(m.email))}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
+   return items.length ? `<div class="ph-socials">${items.join('')}</div>` : '';
+ }
+ 
+@@ -64,7 +64,7 @@ export const aboutBody = m => `
+       <div class="ph-prose">${paragraphs(m.about).map(p => `<p>${esc(p)}</p>`).join('')}</div>
+       <dl class="ph-facts">
+         ${m.location ? `<div><dt>Location</dt><dd>${esc(m.location)}</dd></div>` : ''}
+-        ${m.email ? `<div><dt>Email</dt><dd><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></dd></div>` : ''}
++        ${m.email ? `<div><dt>Email</dt><dd><a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></dd></div>` : ''}
+         ${m.website ? `<div><dt>Website</dt><dd><a href="${esc(m.website)}" target="_blank" rel="noopener noreferrer">${esc(m.website.replace(/^https?:\/\//, ''))}</a></dd></div>` : ''}
+         ${m.currentCompany ? `<div><dt>Currently at</dt><dd>${esc(m.currentCompany)}</dd></div>` : ''}
+       </dl>
+@@ -106,7 +106,7 @@ export const projectsBody = m => `
+ export const servicesBody = m => `
+   <div class="ph-service-grid">
+     ${(m.services || []).map(s => {
+-      const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
++      const cta = safeUrl(normalizeUrl(s.contact_url)) || mailtoHref(m.email);
+       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
+ 
+       return `
+@@ -152,7 +152,7 @@ export function educationBody(m) {
+ 
+ export function contactBody(m, lead = 'Have a project in mind or just want to say hello? Reach out using any of the options below.') {
+   const cards = [];
+-  if (m.email) cards.push(['mail', 'Email', m.email, `mailto:${m.email}`]);
++  if (m.email) cards.push(['mail', 'Email', m.email, mailtoHref(m.email)]);
+   if (m.whatsapp) cards.push(['whatsapp', 'WhatsApp', m.whatsapp, `https://wa.me/${m.whatsapp.replace(/^\+/, '')}`]);
+   m.links.forEach(l => {
+     const href = safeUrl(normalizeUrl(l.url));
+diff --git a/public-portfolio.html b/public-portfolio.html
+index 9e3c5f1..0129807 100644
+--- a/public-portfolio.html
++++ b/public-portfolio.html
+@@ -2,12 +2,12 @@
+ <html lang="en">
+ <head>
+   <meta charset="UTF-8" />
+-  <!-- Clean URLs (/u/<slug>) are rewritten server-side, so relative asset paths must be
++  <!-- Clean URLs (/u/<slug> and /u/<handle>/<number>) are rewritten server-side, so relative asset paths must be
+        resolved from the site root, not from /u/. This must run before any asset is requested. -->
+   <script>
+ (function () {
+   var path = window.location.pathname;
+-  var match = path.match(/^(.*\/)u\/[^/]+\/?$/);
++  var match = path.match(/^(.*\/)u\/[^/]+(?:\/\d+)?\/?$/);
+   var base = match ? match[1] : new URL('.', window.location.href).pathname;
+ 
+   document.write('<base href="' + base + '">');
+diff --git a/signup.html b/signup.html
+index 53cb717..c9cefac 100644
+--- a/signup.html
++++ b/signup.html
+@@ -75,6 +75,33 @@
+             <span class="field-error" id="email-error" aria-live="polite"></span>
+           </div>
+ 
++          <!-- User Handle -->
++          <div class="form-group">
++            <label for="user-handle" class="form-label">User Handle</label>
++            <div class="input-wrap">
++              <span class="input-icon">
++                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>
++              </span>
++              <input
++                type="text"
++                id="user-handle"
++                name="user_handle"
++                class="form-input"
++                placeholder="jane-smith"
++                autocomplete="username"
++                autocapitalize="none"
++                autocorrect="off"
++                spellcheck="false"
++                minlength="3"
++                maxlength="30"
++                aria-describedby="user-handle-hint user-handle-error"
++                required
++              />
++            </div>
++            <span class="field-hint" id="user-handle-hint">This becomes part of your permanent public profile URL (/u/your-handle/…). 3&ndash;30 characters: lowercase letters, numbers and hyphens.</span>
++            <span class="field-error" id="user-handle-error" aria-live="polite"></span>
++          </div>
++
+           <!-- Professional Role -->
+           <div class="form-group">
+             <label for="role" class="form-label">Professional Role <span class="optional-badge">optional</span></label>
+diff --git a/tests/harness.mjs b/tests/harness.mjs
+index 9af38b0..b014bca 100644
+--- a/tests/harness.mjs
++++ b/tests/harness.mjs
+@@ -21,16 +21,21 @@ export async function bundleCall(entry, fn) {
+   });
+   return r.outputFiles[0].text;
+ }
++/** Bundles an ad-hoc module body (used to drive service functions directly against the mock). */
++export async function bundleSource(source) {
++  const r = await esbuild.build({ stdin: { contents: source, resolveDir: ROOT, loader: 'js' }, bundle: true, write: false, format: 'iife', logLevel: 'silent', plugins: [mockPlugin] });
++  return r.outputFiles[0].text;
++}
+ export function seed() {
+   const now = new Date().toISOString();
+   return {
+-    profiles: [{ id: 'U1', full_name: '', username: 'u1' }, { id: 'U2', full_name: 'Other', username: 'u2' }],
++    profiles: [{ id: 'U1', full_name: '', username: 'u1', user_handle: 'user-one', role: null }, { id: 'U2', full_name: 'Other', username: 'u2', user_handle: 'other-user', role: null }],
+     portfolios: [
+-      { id: 'P1', user_id: 'U1', title: 'My Portfolio', slug: 'u1abc-demo-x1y2', template_id: 'reference', is_published: false, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now },
+-      { id: 'P2', user_id: 'U2', title: 'Other', slug: 'taken', template_id: 'reference', is_published: true, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now }
++      { id: 'P1', user_id: 'U1', title: 'My Portfolio', slug: 'u1abc-demo-x1y2', portfolio_number: 0, template_id: 'reference', is_published: false, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now },
++      { id: 'P2', user_id: 'U2', title: 'Other', slug: 'taken', portfolio_number: 0, template_id: 'reference', is_published: true, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now }
+     ],
+     portfolio_projects: [], portfolio_services: [], portfolio_skills: [], portfolio_experience: [],
+-    portfolio_education: [], portfolio_certifications: [], portfolio_links: [], community_posts: []
++    portfolio_education: [], portfolio_certifications: [], portfolio_links: [], community_posts: [], __counters: { U1: 1, U2: 1 }
+   };
+ }
+ export async function openPage(file, query, db, user, code, pathOverride) {
+diff --git a/tests/mock-supabase.js b/tests/mock-supabase.js
+index b8acce0..608a3da 100644
+--- a/tests/mock-supabase.js
++++ b/tests/mock-supabase.js
+@@ -2,8 +2,8 @@
+ // It enforces the real schema's column names, NOT NULL, unique slug, slug format and
+ // a simplified version of the RLS rules so payload mistakes are caught.
+ const COLS = {
+-  portfolios: 'id,user_id,template_id,title,slug,is_published,custom_domain,theme_color,seo_title,seo_description,view_count,created_at,updated_at,headline,about,cover_url,contact_email,whatsapp,sections',
+-  profiles: 'id,full_name,username,title,bio,avatar_url,cover_url,location,role,website,created_at,updated_at',
++  portfolios: 'id,user_id,template_id,title,slug,is_published,custom_domain,theme_color,seo_title,seo_description,view_count,created_at,updated_at,headline,about,cover_url,contact_email,whatsapp,sections,profile_image_url,portfolio_number',
++  profiles: 'id,full_name,username,title,bio,avatar_url,cover_url,location,role,website,created_at,updated_at,user_handle',
+   portfolio_projects: 'id,portfolio_id,title,description,image_url,tech_tags,github_url,demo_url,order_index,created_at,updated_at',
+   portfolio_services: 'id,portfolio_id,name,description,image_url,icon,price,price_label,contact_url,order_index,created_at',
+   portfolio_skills: 'id,portfolio_id,name,level,category,order_index',
+@@ -122,6 +122,11 @@ class Q {
+         if ((this.t === 'portfolios' || this.t === 'community_posts') && row.user_id !== me()?.id) throw err('42501', 'new row violates row-level security policy');
+         if (this.t === 'community_posts') { row.category ??= 'Other'; row.tags ??= []; row.is_published ??= true; row.updated_at ??= row.created_at; }
+         if (this.t === 'portfolio_skills') { row.level ??= 80; row.category ??= 'General'; }
++        if (this.t === 'portfolios') {
++          // Simulates trg_assign_portfolio_number: the server allocates; a client-supplied value is ignored.
++          const c = (db().__counters ||= {});
++          row.portfolio_number = c[row.user_id] ?? 0; c[row.user_id] = row.portfolio_number + 1;
++        }
+         this.checkNN(row); this.checkSlug(row); created.push(row);
+       }
+       rows.push(...created);
+@@ -131,7 +136,13 @@ class Q {
+       this.checkCols(this.payload);
+       const writable = r => (this.t === 'portfolios' || this.t === 'community_posts') ? r.user_id === me()?.id : this.t === 'profiles' ? r.id === me()?.id : owns(r.portfolio_id);
+       const targets = rows.filter(r => writable(r) && match(r)); // RLS: silently affects 0 rows when not owner
+-      for (const r of targets) { const next = { ...r, ...this.payload }; this.checkNN(next); this.checkSlug(next); if (this.t === 'portfolios' && next.user_id !== r.user_id) throw err('P0001', 'owner cannot be changed'); }
++      for (const r of targets) {
++        const next = { ...r, ...this.payload }; this.checkNN(next); this.checkSlug(next);
++        if (this.t === 'portfolios' && next.user_id !== r.user_id) throw err('P0001', 'owner cannot be changed');
++        if (this.t === 'portfolios' && next.portfolio_number !== r.portfolio_number) throw err('P0001', 'portfolio_number cannot be changed');
++        if (this.t === 'profiles' && next.username && db().profiles.some(x => x.username === next.username && x.id !== r.id)) throw err('23505', 'profiles_username_key');
++        if (this.t === 'profiles') for (const k of ['id', 'user_handle', 'role']) if (next[k] !== r[k]) throw err('42501', `${k} cannot be changed`);
++      }
+       targets.forEach(r => Object.assign(r, this.payload));
+       return wrap(this.project(targets.map(r => ({ ...r }))));
+     }
+@@ -163,12 +174,29 @@ const supabase = {
+     getPublicUrl: path => ({ data: { publicUrl: `https://files.test/${bucket}/${path}` } })
+   }) },
+   rpc: async (name, args) => {
++    if (name === 'allocate_portfolio_number') {
++      if (!me() || me().id !== args.p_user_id) return { data: null, error: err('42501', 'not allowed') };
++      const c = (db().__counters ||= {}); const n = c[args.p_user_id] ?? 0; c[args.p_user_id] = n + 1; return { data: n, error: null };
++    }
+     if (name !== 'increment_view_count') return { data: null, error: err('42883', 'no function') };
+     const p = db().portfolios.find(x => x.slug === args.portfolio_slug && x.is_published);
+     if (p) p.view_count = (p.view_count || 0) + 1;
+     return { data: null, error: null };
+   },
+-  auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), getSession: async () => ({ data: { session: me() ? { user: me() } : null }, error: null }) }
++  auth: {
++    // Simulates auth.signUp + the on_auth_user_created trigger (handle_new_user).
++    signUp: async ({ email, password, options }) => {
++      const meta = options?.data || {}; (db().__signups ||= []).push({ email, meta });
++      const h = meta.user_handle;
++      const valid = typeof h === 'string' && h.length >= 3 && h.length <= 30 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(h);
++      if (!valid || db().profiles.some(p => (p.user_handle || '').toLowerCase() === h.toLowerCase())) {
++        return { data: { user: null, session: null }, error: { message: 'Database error saving new user', status: 500 } };
++      }
++      const id = 'NEW-' + (db().profiles.length + 1);
++      db().profiles.push({ id, full_name: meta.full_name || '', username: email.split('@')[0], user_handle: h, role: null });
++      return { data: { user: { id, email, user_metadata: meta }, session: null }, error: null };
++    },
++    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), getSession: async () => ({ data: { session: me() ? { user: me() } : null }, error: null }) }
+ };
+ export default supabase;
+ export async function getUser() { return me() || null; }
+diff --git a/tests/package.json b/tests/package.json
+index 4fe0fa1..1d97829 100644
+--- a/tests/package.json
++++ b/tests/package.json
+@@ -4,7 +4,7 @@
+   "type": "module",
+   "description": "Offline tests: page modules run in jsdom against an in-memory, schema-aware Supabase mock. They do NOT contact a real Supabase project.",
+   "scripts": {
+-    "test": "node templates.test.mjs && node builder.test.mjs && node public.test.mjs && node dash.test.mjs && node pages.test.mjs && node profile.test.mjs"
++    "test": "node templates.test.mjs && node builder.test.mjs && node public.test.mjs && node dash.test.mjs && node pages.test.mjs && node profile.test.mjs && node security.test.mjs"
+   },
+   "devDependencies": {
+     "esbuild": "^0.28.0",
+diff --git a/tests/security.test.mjs b/tests/security.test.mjs
+new file mode 100644
+index 0000000..81096b4
+--- /dev/null
++++ b/tests/security.test.mjs
+@@ -0,0 +1,135 @@
++// Offline tests for the security / signup / email / routing changes.
++// Runs against the in-memory Supabase mock: it proves CLIENT behaviour and the client/DB contract,
++// NOT the real PostgreSQL grants/triggers. Those are verified with supabase_security_verification.sql.
++import { fileURLToPath, pathToFileURL } from 'url';
++import path from 'path';
++import fs from 'fs';
++import { JSDOM } from 'jsdom';
++import { bundle, bundleCall, bundleSource, seed, openPage, sleep, type } from './harness.mjs';
++const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..') + '/';
++const { validateHandle, RESERVED_HANDLES } = await import(pathToFileURL(ROOT + 'js/handle.js').href);
++const { normalizeData, buildDocument, TEMPLATES } = await import(pathToFileURL(ROOT + 'js/portfolio-renderer.js').href);
++let pass = 0, fail = 0;
++const ok = (c, n, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  ' + x)); };
++
++// ---------- 1. handle validation ----------
++const bad = { '': 'empty', 'ab': 'short', ['a'.repeat(31)]: 'long', 'Jane': 'uppercase', 'jane smith': 'space', 'jane_smith': 'underscore',
++  'jane!': 'symbol', '-jane': 'leading hyphen', 'jane-': 'trailing hyphen', 'ja--ne': 'double hyphen', 'admin': 'reserved', 'login': 'reserved' };
++for (const [v, why] of Object.entries(bad)) ok(!validateHandle(v).valid && !!validateHandle(v).message, `H-bad ${why}`);
++for (const v of ['jane', 'jane-smith', 'a1b', 'x'.repeat(30), '123', 'user-one-2']) ok(validateHandle(v).valid, `H-good ${v}`);
++ok(RESERVED_HANDLES.includes('u') && RESERVED_HANDLES.includes('dashboard'), 'H reserved list covers site routes');
++
++// ---------- 2. signup page ----------
++const signupCode = await bundleCall('js/auth.js', 'initSignupPage');
++async function signup(handle, db = seed()) {
++  const p = await openPage('signup.html', '', db, null, signupCode); await sleep(100);
++  const g = id => p.doc.getElementById(id);
++  type(p.w, g('full-name'), 'Jane Smith'); type(p.w, g('email'), 'jane@example.com');
++  type(p.w, g('password'), 'Str0ng!Passw0rd'); type(p.w, g('confirm-password'), 'Str0ng!Passw0rd');
++  type(p.w, g('user-handle'), handle);
++  g('signup-form').dispatchEvent(new p.w.Event('submit', { bubbles: true, cancelable: true }));
++  await sleep(250);
++  return { p, db, err: g('user-handle-error').textContent, signups: db.__signups || [] };
++}
++{
++  const p = await openPage('signup.html', '', seed(), null, signupCode); await sleep(100);
++  const input = p.doc.getElementById('user-handle'), label = p.doc.querySelector('label[for="user-handle"]');
++  ok(!!input && input.required && !!label && /handle/i.test(label.textContent), 'S1 User Handle field is visible, labelled and required');
++  ok(/permanent/i.test(p.doc.getElementById('user-handle-hint').textContent) && input.getAttribute('aria-describedby').includes('user-handle-hint'), 'S2 hint explains the handle is a permanent public URL part and is linked via aria-describedby');
++  ok(p.doc.getElementById('full-name') && p.doc.getElementById('role') && p.doc.getElementById('confirm-password'), 'S3 existing signup fields preserved');
++}
++{
++  const r = await signup('jane-smith');
++  ok(r.signups.length === 1 && r.signups[0].meta.user_handle === 'jane-smith', 'S4 valid handle reaches Auth metadata as user_handle', JSON.stringify(r.signups));
++  ok(r.signups[0].meta.full_name === 'Jane Smith', 'S5 full_name metadata still sent');
++  ok(r.db.profiles.filter(x => x.user_handle === 'jane-smith').length === 1 && r.db.profiles.length === 3, 'S6 exactly one profile created (no client-side duplicate)', String(r.db.profiles.length));
++  ok(r.err === '', 'S7 no handle error on success');
++}
++{
++  const r = await signup('user-one');
++  ok(/taken/i.test(r.err) && r.signups.length === 0, 'S8 existing handle rejected before signUp is called', r.err);
++}
++for (const [h, re, name] of [['Jane', /lowercase/i, 'uppercase'], ['ab', /at least 3/, 'too short'], ['a'.repeat(31), /at most 30/, 'too long'], ['jane smith', /spaces/i, 'space'], ['jane$', /lowercase letters, numbers/i, 'symbol'], ['', /choose a user handle/i, 'empty'], ['admin', /reserved/i, 'reserved']]) {
++  const r = await signup(h);
++  ok(re.test(r.err) && r.signups.length === 0, `S9 ${name} handle rejected with a clear message and no signUp`, r.err);
++}
++{
++  // Supabase reports a failed profile trigger only as a generic message; make sure it is shown as a
++  // handle problem (never swallowed, never replaced by an auto-generated handle).
++  const feCode = await bundleSource(`import { friendlyError } from './js/auth.js'; window.__fe = friendlyError;`);
++  const fe = (await openPage('index.html', '', seed(), null, feCode)).w.__fe;
++  ok(/handle/i.test(fe({ message: 'Database error saving new user' })), 'S10 trigger/unique failure is mapped to a handle-specific message');
++  ok(/handle/i.test(fe({ message: 'duplicate key value violates unique constraint "profiles_user_handle_lower_idx"' })), 'S11 raw duplicate-key text is never shown to the user');
++}
++
++// ---------- 3. email links in every template ----------
++const base = { profile: { full_name: 'Amr Ahmed' }, portfolio: { slug: 'amr', headline: 'Dev', about: 'Hello', theme_color: '#7C3AED', sections: {} },
++  projects: [], skills: [{ name: 'JS', category: 'Frontend' }], experience: [], education: [], certifications: [], links: [],
++  services: [{ name: 'Web apps', description: 'x', price: 500, price_label: 'From', contact_url: '' }] };
++for (const id of Object.keys(TEMPLATES)) {
++  const render = email => buildDocument(normalizeData({ ...base, portfolio: { ...base.portfolio, template_id: id, contact_email: email } }), { baseUrl: 'https://s.test/' });
++  const doc = h => new JSDOM(h).window.document;
++  let d = doc(render('hello@example.com'));
++  const links = [...d.querySelectorAll('a[href^="mailto:"]')];
++  ok(links.length >= 1 && links.every(a => a.getAttribute('href') === 'mailto:hello@example.com'), `E1 ${id}: every mailto link is exactly mailto:<address>`, links.map(a => a.getAttribute('href')).join('|'));
++  ok(!/href=""/.test(render('hello@example.com')), `E2 ${id}: no empty hrefs`);
++  for (const [bad, name] of [['', 'empty'], ['not an email', 'invalid'], ['x"onmouseover="a@b.co', 'attribute-breakout']]) {
++    const h = render(bad); d = doc(h);
++    ok(!/mailto:/i.test(h) && !d.querySelector('[onmouseover]'), `E3 ${id}: ${name} email renders no mailto link and no injected attribute`);
++  }
++}
++{
++  const pub = fs.readFileSync(ROOT + 'js/public-portfolio.js', 'utf8'), bld = fs.readFileSync(ROOT + 'js/portfolio-builder.js', 'utf8');
++  ok(pub.includes('allow-top-navigation-to-custom-protocols') && bld.includes('allow-top-navigation-to-custom-protocols'), 'E4 public page and builder preview sandbox allow mailto: launches');
++  ok(!/allow-same-origin/.test(pub + bld.slice(bld.indexOf('sandbox:'), bld.indexOf('sandbox:') + 200)), 'E5 sandbox still has no allow-same-origin');
++}
++
++// ---------- 4. public routes ----------
++{
++  const code = await bundle('js/public-portfolio.js');
++  const db = seed(); Object.assign(db.portfolios[0], { is_published: true, slug: 'amr-ahmed', headline: 'Dev' });
++  const frame = p => p.doc.getElementById('portfolio-frame'), vis = (p, id) => p.doc.getElementById(id).classList.contains('visible');
++  let p = await openPage('public-portfolio.html', '', db, null, code, '/u/user-one/0'); await sleep(300);
++  ok(!!frame(p), 'R1 /u/<handle>/<number> renders the portfolio'); ok(db.portfolios[0].view_count === 1, 'R2 view counted for handle route');
++  p = await openPage('public-portfolio.html', '?u=user-one&n=0', db, null, code); await sleep(300); ok(!!frame(p), 'R3 ?u=<handle>&n=<number> works on hosts without rewrites');
++  p = await openPage('public-portfolio.html', '', db, null, code, '/u/amr-ahmed'); await sleep(300); ok(!!frame(p), 'R4 existing /u/<slug> links still work');
++  p = await openPage('public-portfolio.html', '', db, null, code, '/u/user-one/7'); await sleep(300); ok(vis(p, 'state-not-found') && !frame(p), 'R5 unknown number -> not found');
++  p = await openPage('public-portfolio.html', '', db, null, code, '/u/nobody/0'); await sleep(300); ok(vis(p, 'state-not-found'), 'R6 unknown handle -> not found');
++  db.portfolios[0].is_published = false;
++  p = await openPage('public-portfolio.html', '', db, null, code, '/u/user-one/0'); await sleep(300); ok(!frame(p) && vis(p, 'state-not-found'), 'R7 unpublished is invisible to anonymous visitors on the handle route');
++  p = await openPage('public-portfolio.html', '', db, { id: 'U1', user_metadata: {} }, code, '/u/user-one/0'); await sleep(300); ok(!frame(p) && vis(p, 'state-not-published'), 'R8 owner sees the not-published notice, never the page');
++}
++
++// ---------- 5. portfolio creation / numbering contract ----------
++{
++  const code = await bundleSource(`import { createPortfolio } from './js/portfolio-service.js'; import supabase from './js/supabase-client.js'; window.__t = { createPortfolio, supabase };`);
++  const db = seed(); const w = (await openPage('index.html', '', db, { id: 'U1', user_metadata: {} }, code)).w;
++  const { createPortfolio, supabase } = w.__t, U = { id: 'U1' };
++  const nums = () => db.portfolios.filter(x => x.user_id === 'U1').map(x => x.portfolio_number).sort((a, b) => a - b);
++  const a = await createPortfolio({ user: U, title: 'One' }), b = await createPortfolio({ user: U, title: 'Two' });
++  ok(JSON.stringify(nums()) === '[0,1,2]', 'N1 server allocates sequential numbers after the existing 0', nums().join());
++  await supabase.from('portfolios').delete().eq('id', b).eq('user_id', 'U1');
++  await createPortfolio({ user: U, title: 'Three' });
++  ok(JSON.stringify(nums()) === '[0,1,3]', 'N2 a deleted number is never reused', nums().join());
++  const { error } = await supabase.from('portfolios').update({ portfolio_number: 0 }).eq('id', a).eq('user_id', 'U1');
++  ok(!!error, 'N3 portfolio_number cannot be changed after creation');
++  const { error: e2 } = await supabase.from('portfolios').update({ user_id: 'U2' }).eq('id', a).eq('user_id', 'U1');
++  ok(!!e2, 'N4 user_id cannot be changed');
++  const { error: e3 } = await supabase.from('profiles').update({ user_handle: 'hacked' }).eq('id', 'U1');
++  ok(!!e3 && db.profiles[0].user_handle === 'user-one', 'N5 ordinary user cannot change user_handle');
++  const { error: e4 } = await supabase.from('profiles').update({ role: 'admin' }).eq('id', 'U1');
++  ok(!!e4 && db.profiles[0].role === null, 'N6 ordinary user cannot change role');
++  const { error: e5 } = await supabase.from('profiles').update({ full_name: 'New Name', bio: 'b' }).eq('id', 'U1');
++  ok(!e5 && db.profiles[0].full_name === 'New Name', 'N7 legitimate profile edits still work');
++}
++
++// ---------- 6. static guarantees ----------
++{
++  const src = f => fs.readFileSync(ROOT + f, 'utf8');
++  for (const f of ['js/profile.js', 'js/portfolio-builder.js', 'js/auth.js', 'js/dashboard.js', 'js/community.js']) ok(!/\.upsert\(/.test(src(f)), `X1 ${f} has no client-side upsert`);
++  ok(!/service_role|SERVICE_ROLE/.test(['js/config.js', '.env.example', 'js/supabase-client.js'].map(src).join('').replace(/never put a (secret or )?service_role[^\n]*/gi, '').replace(/Never put a service_role[^\n]*/gi, '')), 'X2 no service_role key in browser code');
++  ok(!/isAdmin|is_admin|\.role\s*===/.test(['js/auth.js', 'js/dashboard.js', 'js/navigation.js', 'js/community.js'].map(src).join('')), 'X3 no client-side role checks used for authorization');
++}
++
++console.log(`${pass} passed, ${fail} failed`);
++process.exit(fail ? 1 : 0);
+diff --git a/vercel.json b/vercel.json
+index 7fb3e34..57e9f84 100644
+--- a/vercel.json
++++ b/vercel.json
+@@ -1,5 +1,9 @@
+ {
+   "rewrites": [
++    {
++      "source": "/u/:handle/:number(\\d+)",
++      "destination": "/public-portfolio.html?u=:handle&n=:number"
++    },
+     {
+       "source": "/u/:slug",
+       "destination": "/public-portfolio.html?u=:slug"

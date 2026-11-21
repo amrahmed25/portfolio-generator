@@ -88,8 +88,10 @@ async function save(e) {
   const nullable = v => (v.trim() === '' ? null : v.trim());
   const site = nullable($('website').value);
   try {
-    const { error } = await supabase.from('profiles').upsert({
-      id: user.id,
+    // UPDATE, not upsert: the profile row is created by the signup trigger, and an
+    // upsert would try to INSERT (which needs the NOT NULL, protected user_handle).
+    // Only editable columns are sent; id, role and user_handle are never written from here.
+    const { data: saved, error } = await supabase.from('profiles').update({
       full_name: $('full_name').value.trim(),
       username: nullable($('username').value),
       title: nullable($('title').value),
@@ -97,8 +99,9 @@ async function save(e) {
       location: nullable($('location').value),
       website: site && (/^[a-z][a-z0-9+.-]*:/i.test(site) ? site : `https://${site}`),
       avatar_url: avatarUrl || null
-    }, { onConflict: 'id' });
+    }).eq('id', user.id).select('id');
     if (error) throw error;
+    if (!saved || !saved.length) throw new Error('Your profile could not be found. Please sign out and sign in again.');
     dirty = false;
     showToast('Profile saved.', 'success');
   } catch (err) {

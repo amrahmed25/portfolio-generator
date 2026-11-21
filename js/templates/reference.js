@@ -4,7 +4,7 @@
  * index.html): Syne + DM Sans, cream/navy palette, light and dark theme.
  * Styles live in css/templates/reference.css.
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 
 export const meta = {
@@ -48,7 +48,7 @@ function renderHero(m) {
     return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer" class="social-link" title="${esc(label)}" aria-label="${esc(label)}">${platformIcon(l.platform, 18)}</a>`;
   }).join('');
   const mail = m.email
-    ? `<a href="mailto:${esc(m.email)}" class="social-link" title="Email" aria-label="Email">${icon('mail', 18)}</a>` : '';
+    ? `<a href="${esc(mailtoHref(m.email))}" class="social-link" title="Email" aria-label="Email">${icon('mail', 18)}</a>` : '';
   const portrait = m.avatar
     ? `<img src="${esc(m.avatar)}" alt="${esc(m.name)}">`
     : `<div class="hero-initials" aria-hidden="true">${esc(initials(m.name))}</div>`;
@@ -84,7 +84,7 @@ function renderAbout(m) {
 
   const rows = [['Name', esc(m.name)]];
   if (m.location) rows.push(['Location', esc(m.location)]);
-  if (m.email) rows.push(['Email', `<a href="mailto:${esc(m.email)}">${esc(m.email)}</a>`]);
+  if (m.email) rows.push(['Email', `<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a>`]);
   if (m.whatsapp) rows.push(['Phone', `<a href="tel:${esc(m.whatsapp)}">${esc(m.whatsapp)}</a>`]);
   if (m.website) rows.push(['Website', `<a href="${esc(m.website)}" target="_blank" rel="noopener noreferrer">${esc(m.website.replace(/^https?:\/\//, ''))}</a>`]);
   m.links.forEach(l => {
@@ -219,7 +219,7 @@ function renderEducation(m) {
 
 function renderContact(m) {
   const cards = [];
-  if (m.email) cards.push(['mail', 'Email', m.email, `mailto:${m.email}`]);
+  if (m.email) cards.push(['mail', 'Email', m.email, mailtoHref(m.email)]);
   if (m.whatsapp) cards.push(['whatsapp', 'WhatsApp', m.whatsapp, `https://wa.me/${m.whatsapp.replace(/^\+/, '')}`]);
   m.links.forEach(l => {
     const href = safeUrl(normalizeUrl(l.url));

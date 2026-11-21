@@ -3,7 +3,7 @@
  * They emit neutral "ph-*" markup; each template's stylesheet decides the look.
  * (The Reference template keeps its own markup to stay faithful to the original page.)
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 
 export const NAV_ORDER = [
@@ -49,7 +49,7 @@ export function socialRow(m, size = 18) {
     const label = l.label || l.platform;
     return `<a class="ph-social" href="${esc(href)}"${ext(href)} aria-label="${esc(label)}" title="${esc(label)}">${platformIcon(l.platform, size)}</a>`;
   });
-  if (m.email) items.push(`<a class="ph-social" href="mailto:${esc(m.email)}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
+  if (m.email) items.push(`<a class="ph-social" href="${esc(mailtoHref(m.email))}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
   return items.length ? `<div class="ph-socials">${items.join('')}</div>` : '';
 }
 
@@ -64,7 +64,7 @@ export const aboutBody = m => `
       <div class="ph-prose">${paragraphs(m.about).map(p => `<p>${esc(p)}</p>`).join('')}</div>
       <dl class="ph-facts">
         ${m.location ? `<div><dt>Location</dt><dd>${esc(m.location)}</dd></div>` : ''}
-        ${m.email ? `<div><dt>Email</dt><dd><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></dd></div>` : ''}
+        ${m.email ? `<div><dt>Email</dt><dd><a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></dd></div>` : ''}
         ${m.website ? `<div><dt>Website</dt><dd><a href="${esc(m.website)}" target="_blank" rel="noopener noreferrer">${esc(m.website.replace(/^https?:\/\//, ''))}</a></dd></div>` : ''}
         ${m.currentCompany ? `<div><dt>Currently at</dt><dd>${esc(m.currentCompany)}</dd></div>` : ''}
       </dl>
@@ -106,7 +106,7 @@ export const projectsBody = m => `
 export const servicesBody = m => `
   <div class="ph-service-grid">
     ${(m.services || []).map(s => {
-      const cta = safeUrl(normalizeUrl(s.contact_url)) || (m.email ? `mailto:${m.email}` : '');
+      const cta = safeUrl(normalizeUrl(s.contact_url)) || mailtoHref(m.email);
       const price = s.price != null ? Number(s.price).toLocaleString('en-US') : '';
 
       return `
@@ -152,7 +152,7 @@ export function educationBody(m) {
 
 export function contactBody(m, lead = 'Have a project in mind or just want to say hello? Reach out using any of the options below.') {
   const cards = [];
-  if (m.email) cards.push(['mail', 'Email', m.email, `mailto:${m.email}`]);
+  if (m.email) cards.push(['mail', 'Email', m.email, mailtoHref(m.email)]);
   if (m.whatsapp) cards.push(['whatsapp', 'WhatsApp', m.whatsapp, `https://wa.me/${m.whatsapp.replace(/^\+/, '')}`]);
   m.links.forEach(l => {
     const href = safeUrl(normalizeUrl(l.url));

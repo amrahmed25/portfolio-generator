@@ -6,6 +6,7 @@
 
 import supabase from './supabase-client.js';
 import { showToast, validateEmail, validatePassword } from './utils.js';
+import { validateHandle, checkHandleAvailability } from './handle.js';
 
 // ─────────────────────────────────────────────
 //  HELPERS
@@ -26,6 +27,9 @@ function friendlyError(err) {
   }
   if (raw.includes('email not confirmed')) {
     return 'Please confirm your email address before signing in.';
+  }
+  if (raw.includes('database error saving new user') || raw.includes('user_handle') || raw.includes('duplicate key')) {
+    return 'We could not create your account. The handle you chose may have just been taken or is not allowed. Please try a different one.';
   }
   if (raw.includes('user already registered') || raw.includes('already exists')) {
     return 'An account with this email already exists. Try signing in instead.';
@@ -178,14 +182,22 @@ function renderStrengthMeter(score, label, barPrefix, labelId) {
 // ─────────────────────────────────────────────
 
 /**
- * Sign up a new user and create their profile row.
+ * Sign up a new user.
+ *
+ * The profile row is created server-side by the on_auth_user_created trigger
+ * (handle_new_user), which reads full_name, role and user_handle from the auth
+ * metadata below. The browser never inserts into public.profiles itself:
+ * profiles.user_handle is NOT NULL and protected, and the former client-side
+ * upsert always failed anyway (it sent a non-existent "email" column).
+ *
  * @param {string} email
  * @param {string} password
  * @param {string} fullName
  * @param {string} [role]
+ * @param {string} userHandle  already validated, lowercase
  * @returns {Promise<{ data: Object|null, error: Object|null }>}
  */
-async function signUp(email, password, fullName, role) {
+async function signUp(email, password, fullName, role, userHandle) {
   const { data, error } = await supabase.auth.signUp({
     email: email.trim().toLowerCase(),
     password,
@@ -193,26 +205,12 @@ async function signUp(email, password, fullName, role) {
       data: {
         full_name: fullName.trim(),
         role: role || null,
+        user_handle: userHandle,
       },
     },
   });
 
   if (error) return { data: null, error };
-
-  // Insert into profiles table (best-effort — may already exist via trigger)
-  if (data?.user) {
-    await supabase.from('profiles').upsert(
-      {
-        id: data.user.id,
-        full_name: fullName.trim(),
-        role: role || null,
-        email: email.trim().toLowerCase(),
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: 'id' }
-    );
-  }
-
   return { data, error: null };
 }
 
@@ -412,6 +410,23 @@ async function initSignupPage() {
     });
   }
 
+  // Handle: format feedback while typing, availability when the field loses focus
+  const handleInput = document.getElementById('user-handle');
+  if (handleInput) {
+    handleInput.addEventListener('input', () => {
+      const v = handleInput.value;
+      // Only show format problems once something is typed; stay quiet on an empty field
+      setFieldError('user-handle-error', v ? validateHandle(v).message : '');
+    });
+    handleInput.addEventListener('blur', async () => {
+      const v = handleInput.value;
+      if (!v || !validateHandle(v).valid) return;
+      if ((await checkHandleAvailability(supabase, v)) === 'taken' && handleInput.value === v) {
+        setFieldError('user-handle-error', 'That handle is already taken. Please choose another.');
+      }
+    });
+  }
+
   const form = document.getElementById('signup-form');
   if (!form) return;
 
@@ -421,6 +436,7 @@ async function initSignupPage() {
     const nameVal     = (document.getElementById('full-name')?.value || '').trim();
     const emailVal    = (document.getElementById('email')?.value || '').trim();
     const roleVal     = document.getElementById('role')?.value || '';
+    const handleVal   = document.getElementById('user-handle')?.value || '';
     const passwordVal = document.getElementById('password')?.value || '';
     const confirmVal  = document.getElementById('confirm-password')?.value || '';
 
@@ -471,7 +487,14 @@ async function initSignupPage() {
       setFieldError('confirm-error', '');
     }
 
-    // Terms
+    // User handle (format first, then availability)
+    const handleCheck = validateHandle(handleVal);
+    if (!handleCheck.valid) {
+      setFieldError('user-handle-error', handleCheck.message);
+      valid = false;
+    } else {
+      setFieldError('user-handle-error', '');
+    }
 
     if (!valid) return;
 
@@ -479,14 +502,30 @@ async function initSignupPage() {
     const btn = document.getElementById('signup-btn');
     setButtonLoading(btn, true);
 
-    const { data, error } = await signUp(emailVal, passwordVal, nameVal, roleVal);
+    if ((await checkHandleAvailability(supabase, handleVal)) === 'taken') {
+      setButtonLoading(btn, false);
+      setFieldError('user-handle-error', 'That handle is already taken. Please choose another.');
+      document.getElementById('user-handle')?.focus();
+      return;
+    }
 
-    setButtonLoading(btn, false);
+    const { data, error } = await signUp(emailVal, passwordVal, nameVal, roleVal, handleVal);
 
     if (error) {
+      // Supabase reports a failed profile trigger (e.g. a handle taken a moment ago)
+      // only as a generic "Database error saving new user". Re-check so we can say why.
+      if ((await checkHandleAvailability(supabase, handleVal)) === 'taken') {
+        setButtonLoading(btn, false);
+        setFieldError('user-handle-error', 'That handle was just taken. Please choose another.');
+        document.getElementById('user-handle')?.focus();
+        return;
+      }
+      setButtonLoading(btn, false);
       showAuthError('auth-error', 'auth-error-msg', friendlyError(error));
       return;
     }
+
+    setButtonLoading(btn, false);
 
     // Supabase may require email confirmation — check session
     const { session: newSession } = await getSession();

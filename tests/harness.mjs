@@ -21,16 +21,21 @@ export async function bundleCall(entry, fn) {
   });
   return r.outputFiles[0].text;
 }
+/** Bundles an ad-hoc module body (used to drive service functions directly against the mock). */
+export async function bundleSource(source) {
+  const r = await esbuild.build({ stdin: { contents: source, resolveDir: ROOT, loader: 'js' }, bundle: true, write: false, format: 'iife', logLevel: 'silent', plugins: [mockPlugin] });
+  return r.outputFiles[0].text;
+}
 export function seed() {
   const now = new Date().toISOString();
   return {
-    profiles: [{ id: 'U1', full_name: '', username: 'u1' }, { id: 'U2', full_name: 'Other', username: 'u2' }],
+    profiles: [{ id: 'U1', full_name: '', username: 'u1', user_handle: 'user-one', role: null }, { id: 'U2', full_name: 'Other', username: 'u2', user_handle: 'other-user', role: null }],
     portfolios: [
-      { id: 'P1', user_id: 'U1', title: 'My Portfolio', slug: 'u1abc-demo-x1y2', template_id: 'reference', is_published: false, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now },
-      { id: 'P2', user_id: 'U2', title: 'Other', slug: 'taken', template_id: 'reference', is_published: true, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now }
+      { id: 'P1', user_id: 'U1', title: 'My Portfolio', slug: 'u1abc-demo-x1y2', portfolio_number: 0, template_id: 'reference', is_published: false, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now },
+      { id: 'P2', user_id: 'U2', title: 'Other', slug: 'taken', portfolio_number: 0, template_id: 'reference', is_published: true, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now }
     ],
     portfolio_projects: [], portfolio_services: [], portfolio_skills: [], portfolio_experience: [],
-    portfolio_education: [], portfolio_certifications: [], portfolio_links: [], community_posts: []
+    portfolio_education: [], portfolio_certifications: [], portfolio_links: [], community_posts: [], __counters: { U1: 1, U2: 1 }
   };
 }
 export async function openPage(file, query, db, user, code, pathOverride) {

@@ -761,3 +761,12 @@
   .auth-card  { padding: 2rem 1.25rem; }
   .auth-body--centered { padding: 1.5rem 1rem; }
 }
+
+/* Helper text under a form field (used by the signup User Handle field) */
+.field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--secondary-text, #64748B);
+}

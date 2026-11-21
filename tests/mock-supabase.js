@@ -2,8 +2,8 @@
 // It enforces the real schema's column names, NOT NULL, unique slug, slug format and
 // a simplified version of the RLS rules so payload mistakes are caught.
 const COLS = {
-  portfolios: 'id,user_id,template_id,title,slug,is_published,custom_domain,theme_color,seo_title,seo_description,view_count,created_at,updated_at,headline,about,cover_url,contact_email,whatsapp,sections',
-  profiles: 'id,full_name,username,title,bio,avatar_url,cover_url,location,role,website,created_at,updated_at',
+  portfolios: 'id,user_id,template_id,title,slug,is_published,custom_domain,theme_color,seo_title,seo_description,view_count,created_at,updated_at,headline,about,cover_url,contact_email,whatsapp,sections,profile_image_url,portfolio_number',
+  profiles: 'id,full_name,username,title,bio,avatar_url,cover_url,location,role,website,created_at,updated_at,user_handle',
   portfolio_projects: 'id,portfolio_id,title,description,image_url,tech_tags,github_url,demo_url,order_index,created_at,updated_at',
   portfolio_services: 'id,portfolio_id,name,description,image_url,icon,price,price_label,contact_url,order_index,created_at',
   portfolio_skills: 'id,portfolio_id,name,level,category,order_index',
@@ -122,6 +122,11 @@ class Q {
         if ((this.t === 'portfolios' || this.t === 'community_posts') && row.user_id !== me()?.id) throw err('42501', 'new row violates row-level security policy');
         if (this.t === 'community_posts') { row.category ??= 'Other'; row.tags ??= []; row.is_published ??= true; row.updated_at ??= row.created_at; }
         if (this.t === 'portfolio_skills') { row.level ??= 80; row.category ??= 'General'; }
+        if (this.t === 'portfolios') {
+          // Simulates trg_assign_portfolio_number: the server allocates; a client-supplied value is ignored.
+          const c = (db().__counters ||= {});
+          row.portfolio_number = c[row.user_id] ?? 0; c[row.user_id] = row.portfolio_number + 1;
+        }
         this.checkNN(row); this.checkSlug(row); created.push(row);
       }
       rows.push(...created);
@@ -131,7 +136,13 @@ class Q {
       this.checkCols(this.payload);
       const writable = r => (this.t === 'portfolios' || this.t === 'community_posts') ? r.user_id === me()?.id : this.t === 'profiles' ? r.id === me()?.id : owns(r.portfolio_id);
       const targets = rows.filter(r => writable(r) && match(r)); // RLS: silently affects 0 rows when not owner
-      for (const r of targets) { const next = { ...r, ...this.payload }; this.checkNN(next); this.checkSlug(next); if (this.t === 'portfolios' && next.user_id !== r.user_id) throw err('P0001', 'owner cannot be changed'); }
+      for (const r of targets) {
+        const next = { ...r, ...this.payload }; this.checkNN(next); this.checkSlug(next);
+        if (this.t === 'portfolios' && next.user_id !== r.user_id) throw err('P0001', 'owner cannot be changed');
+        if (this.t === 'portfolios' && next.portfolio_number !== r.portfolio_number) throw err('P0001', 'portfolio_number cannot be changed');
+        if (this.t === 'profiles' && next.username && db().profiles.some(x => x.username === next.username && x.id !== r.id)) throw err('23505', 'profiles_username_key');
+        if (this.t === 'profiles') for (const k of ['id', 'user_handle', 'role']) if (next[k] !== r[k]) throw err('42501', `${k} cannot be changed`);
+      }
       targets.forEach(r => Object.assign(r, this.payload));
       return wrap(this.project(targets.map(r => ({ ...r }))));
     }
@@ -163,12 +174,29 @@ const supabase = {
     getPublicUrl: path => ({ data: { publicUrl: `https://files.test/${bucket}/${path}` } })
   }) },
   rpc: async (name, args) => {
+    if (name === 'allocate_portfolio_number') {
+      if (!me() || me().id !== args.p_user_id) return { data: null, error: err('42501', 'not allowed') };
+      const c = (db().__counters ||= {}); const n = c[args.p_user_id] ?? 0; c[args.p_user_id] = n + 1; return { data: n, error: null };
+    }
     if (name !== 'increment_view_count') return { data: null, error: err('42883', 'no function') };
     const p = db().portfolios.find(x => x.slug === args.portfolio_slug && x.is_published);
     if (p) p.view_count = (p.view_count || 0) + 1;
     return { data: null, error: null };
   },
-  auth: { onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), getSession: async () => ({ data: { session: me() ? { user: me() } : null }, error: null }) }
+  auth: {
+    // Simulates auth.signUp + the on_auth_user_created trigger (handle_new_user).
+    signUp: async ({ email, password, options }) => {
+      const meta = options?.data || {}; (db().__signups ||= []).push({ email, meta });
+      const h = meta.user_handle;
+      const valid = typeof h === 'string' && h.length >= 3 && h.length <= 30 && /^[a-z0-9]+(-[a-z0-9]+)*$/.test(h);
+      if (!valid || db().profiles.some(p => (p.user_handle || '').toLowerCase() === h.toLowerCase())) {
+        return { data: { user: null, session: null }, error: { message: 'Database error saving new user', status: 500 } };
+      }
+      const id = 'NEW-' + (db().profiles.length + 1);
+      db().profiles.push({ id, full_name: meta.full_name || '', username: email.split('@')[0], user_handle: h, role: null });
+      return { data: { user: { id, email, user_metadata: meta }, session: null }, error: null };
+    },
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }), getSession: async () => ({ data: { session: me() ? { user: me() } : null }, error: null }) }
 };
 export default supabase;
 export async function getUser() { return me() || null; }

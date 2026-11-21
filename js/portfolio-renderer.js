@@ -15,7 +15,8 @@ import {
   esc,
   safeUrl,
   normalizeUrl,
-  hasSection
+  hasSection,
+  EMAIL_PATTERN
 } from './templates/helpers.js';
 
 export { esc, safeUrl, normalizeUrl, hasSection };
@@ -193,7 +194,9 @@ export function normalizeData(raw = {}) {
       normalizeUrl(profile.website)
     ),
 
-    email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    // Same strict pattern the templates use to build mailto: links, so a value that
+    // passes here always yields a working, attribute-safe link (and invalid ones render nothing).
+    email: EMAIL_PATTERN.test(email)
       ? email
       : '',
 

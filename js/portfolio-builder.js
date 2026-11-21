@@ -243,7 +243,7 @@ function ensurePreviewFrame() {
   if (previewFrame) return previewFrame;
   previewFrame = h('iframe', {
     id: 'preview-iframe', title: 'Portfolio preview',
-    sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation',
+    sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols',
     style: 'width:100%;height:100%;border:0;display:block;background:#fff;'
   });
   $('preview-content').replaceChildren(previewFrame);
@@ -765,13 +765,15 @@ async function saveCore() {
   if (pErr) throw pErr;
 
   // Do not include avatar_url here so the account profile picture is never modified by the portfolio builder
-  const { error: prErr } = await supabase.from('profiles').upsert({
-    id: state.user.id,
+  // UPDATE, not upsert: the row is created by the signup trigger and an upsert would
+  // attempt an INSERT (needs the NOT NULL, protected user_handle). Never send id/role/user_handle.
+  const { data: saved, error: prErr } = await supabase.from('profiles').update({
     full_name: nullable(p.full_name),
     location: nullable(p.location),
     website: nullable(p.website) && normalizeUrlValue(p.website)
-  }, { onConflict: 'id' });
+  }).eq('id', state.user.id).select('id');
   if (prErr) throw prErr;
+  if (!saved || !saved.length) throw new Error('Your profile could not be found. Please sign out and sign in again.');
 }
 
 async function saveList(key) {

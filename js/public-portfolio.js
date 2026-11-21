@@ -17,10 +17,23 @@ const CHILD_TABLES = {
   certifications: 'portfolio_certifications', links: 'portfolio_links'
 };
 
-function readSlug() {
-  const m = window.location.pathname.match(/\/u\/([^/]+)\/?$/);
-  const raw = m ? decodeURIComponent(m[1]) : new URLSearchParams(window.location.search).get('u') || '';
-  return raw.trim().toLowerCase();
+/**
+ * Works out which portfolio the URL points at. Supported forms:
+ *   /u/<slug>                       (existing links, unchanged)
+ *   /u/<user_handle>/<number>       (handle + per-user portfolio number)
+ *   public-portfolio.html?u=<slug>  or  ?u=<user_handle>&n=<number>   (hosts without rewrites)
+ * Returns { slug } | { handle, number } | null.
+ */
+function readRoute() {
+  const params = new URLSearchParams(window.location.search);
+  const two = window.location.pathname.match(/\/u\/([^/]+)\/(\d+)\/?$/);
+  if (two) return { handle: decodeURIComponent(two[1]).trim().toLowerCase(), number: Number(two[2]) };
+  const one = window.location.pathname.match(/\/u\/([^/]+)\/?$/);
+  const raw = (one ? decodeURIComponent(one[1]) : params.get('u') || '').trim().toLowerCase();
+  if (!raw) return null;
+  const n = params.get('n');
+  if (!one && n !== null && /^\d+$/.test(n)) return { handle: raw, number: Number(n) };
+  return { slug: raw };
 }
 
 function showState(id) {
@@ -60,14 +73,23 @@ function renderFrame(model) {
   frame.id = 'portfolio-frame';
   frame.title = `${model.name}'s portfolio`;
   // Same sandbox as the builder preview: scripts run, but cannot touch this page or its session.
-  frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation');
+  frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols');
   frame.srcdoc = buildDocument(model, { baseUrl: new URL('./', document.baseURI).href });
   container.replaceChildren(frame);
 }
 
-async function loadPortfolio(slug) {
+async function findPortfolio(route) {
+  if (route.slug) return supabase.from('portfolios').select('*').eq('slug', route.slug).maybeSingle();
+  // handle + number: resolve the handle through the public profiles table first
+  const { data: owner, error } = await supabase.from('profiles').select('id').eq('user_handle', route.handle).maybeSingle();
+  if (error) return { data: null, error };
+  if (!owner) return { data: null, error: null };
+  return supabase.from('portfolios').select('*').eq('user_id', owner.id).eq('portfolio_number', route.number).maybeSingle();
+}
+
+async function loadPortfolio(route) {
   try {
-    const { data: portfolio, error } = await supabase.from('portfolios').select('*').eq('slug', slug).maybeSingle();
+    const { data: portfolio, error } = await findPortfolio(route);
     if (error) throw error;
     if (!portfolio) { hideLoading(); showState('state-not-found'); return; }
     if (!portfolio.is_published) { hideLoading(); showState('state-not-published'); return; }
@@ -93,7 +115,7 @@ async function loadPortfolio(slug) {
     hideLoading();
 
     // Count the view; a failure here must never affect the page.
-    try { await supabase.rpc('increment_view_count', { portfolio_slug: slug }); } catch (_) { /* ignore */ }
+    try { await supabase.rpc('increment_view_count', { portfolio_slug: portfolio.slug }); } catch (_) { /* ignore */ }
   } catch (err) {
     console.error('[PortfolioHub] Failed to load portfolio:', err);
     hideLoading();
@@ -119,15 +141,15 @@ function initShare() {
 
 function init() {
   initShare();
-  const slug = readSlug();
-  if (!slug) {
+  const route = readRoute();
+  if (!route) {
     document.title = 'Portfolio Not Found | PortfolioHub';
     hideLoading();
     showState('state-not-found');
     return;
   }
   $('#btn-retry').addEventListener('click', () => window.location.reload());
-  loadPortfolio(slug);
+  loadPortfolio(route);
 }
 
 init();
