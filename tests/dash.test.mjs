@@ -21,7 +21,7 @@ ok(p.doc.querySelector('[data-portfolio-id="P1"] .btn-edit').href.includes('port
 const mod = await p.w.__mod;
 // publish toggle
 await mod.togglePublish('P1', false); await sleep(100);
-ok(db.portfolios[0].is_published === true && view('P1').getAttribute('aria-disabled') !== 'true' && view('P1').href.includes('u1abc-demo-x1y2'), 'F7 publishing enables the View link', view('P1').outerHTML.slice(0, 120));
+ok(db.portfolios[0].is_published === true && view('P1').getAttribute('aria-disabled') !== 'true' && view('P1').href.endsWith('u=user-one&n=1'), 'F7 publishing enables the View link', view('P1').outerHTML.slice(0, 120));
 await mod.togglePublish('P1', true); await sleep(100);
 ok(db.portfolios[0].is_published === false && view('P1').getAttribute('aria-disabled') === 'true', 'F8 unpublishing disables it again');
 // cannot touch someone else's portfolio even by id

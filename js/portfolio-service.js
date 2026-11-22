@@ -4,6 +4,7 @@
  */
 import supabase from './supabase-client.js';
 import { resolveTemplateId } from './portfolio-renderer.js';
+import { buildPublicUrl } from './portfolio-url.js';
 
 function slugBase(title) {
   const base = String(title || '')
@@ -19,6 +20,7 @@ function slugBase(title) {
 
 /**
  * Creates a portfolio for `user` and returns its id.
+ * portfolio_number is NOT sent: the database assigns it (per-user, never reused).
  * Retries with a fresh random suffix if the generated slug collides.
  * Throws on any other failure so callers can show a message.
  */
@@ -44,14 +46,11 @@ export async function createPortfolio({ user, title, templateId }) {
 }
 
 /**
- * Public URL for a published portfolio.
- * Clean /u/<slug> URLs need the rewrite rules in vercel.json or _redirects, which
- * local servers and GitHub Pages do not have, so those get the query-string form.
+ * Public URL for a portfolio: /u/{user_handle}/{number} (see portfolio-url.js).
+ * Pass an object with user_handle + portfolio_number for the canonical URL. A plain slug
+ * string (or an object without those parts) yields the legacy /u/<slug> URL, which the
+ * public page redirects to the canonical one.
  */
-export function publicUrl(slug) {
-  const { origin, hostname, pathname } = window.location;
-  const noRewrite = /^(localhost|127\.|\[::1\])/.test(hostname) || hostname.endsWith('.github.io');
-  if (!noRewrite) return `${origin}/u/${encodeURIComponent(slug)}`;
-  const dir = pathname.replace(/[^/]*$/, '');
-  return `${origin}${dir}public-portfolio.html?u=${encodeURIComponent(slug)}`;
+export function publicUrl(target) {
+  return buildPublicUrl(target, window.location);
 }

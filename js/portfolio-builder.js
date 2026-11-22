@@ -633,7 +633,7 @@ function renderTemplate() {
   const toggles = h('div', {}, sectionKeys.map(k => checkbox(SECTION_META[k].title, sections[k] !== false, on => { sections[k] = on; markDirty(); })));
 
   const slugField = field({ label: 'Public URL name', req: true, value: pf.slug, maxlength: 60, validate: v.slug,
-    hint: `Your portfolio will live at ${publicUrl(pf.slug || 'your-name')}`, onInput: val => { pf.slug = val.trim().toLowerCase(); markDirty(); } });
+    hint: `Your public link is ${publicUrl(urlTarget())}. Visitors on the old link ${publicUrl(pf.slug || 'your-name')} are redirected there.`, onInput: val => { pf.slug = val.trim().toLowerCase(); markDirty(); } });
 
   return [
     h('div', { class: 'form-group' }, h('div', { class: 'form-label' }, 'Template'), grid),
@@ -677,6 +677,12 @@ function initNavigation() {
 }
 
 /* ------------------------------------------------------------------ */
+/** Portfolio + owner handle -> what publicUrl() needs for /u/{handle}/{number}. */
+function urlTarget() {
+  const pf = state.portfolio || {};
+  return { slug: pf.slug, portfolio_number: pf.portfolio_number, user_handle: state.profile && state.profile.user_handle };
+}
+
 /* URLs live in portfolio-service.js (publicUrl)                          */
 /* ------------------------------------------------------------------ */
 
@@ -876,7 +882,7 @@ function renderPublishState() {
       link = h('a', { id: 'view-live-btn', class: 'header-btn', target: '_blank', rel: 'noopener noreferrer' }, h('span', {}, 'View live'));
       $('publish-btn').before(link);
     }
-    link.href = publicUrl(state.portfolio.slug);
+    link.href = publicUrl(urlTarget());
   } else if (link) link.remove();
 }
 
@@ -893,7 +899,7 @@ async function togglePublish() {
     state.portfolio.is_published = next;
     renderPublishState();
     if (next) {
-      const url = publicUrl(state.portfolio.slug);
+      const url = publicUrl(urlTarget());
       const copied = await copyToClipboard(url).catch(() => false);
       showToast(copied ? 'Published. The link was copied to your clipboard.' : 'Published.', 'success');
     } else {
@@ -944,7 +950,7 @@ async function load() {
   if (pfErr && pfErr.code !== '22P02') throw pfErr; // 22P02 = malformed id in the URL
   if (!pf) return showFatal('That portfolio was not found, or you do not have access to it.');
 
-  const { data: profile, error: prErr } = await supabase.from('profiles').select('id, full_name, location, website').eq('id', user.id).maybeSingle();
+  const { data: profile, error: prErr } = await supabase.from('profiles').select('id, full_name, location, website, user_handle').eq('id', user.id).maybeSingle();
   if (prErr) throw prErr;
 
   const keys = Object.keys(LISTS);

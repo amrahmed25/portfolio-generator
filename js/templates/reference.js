@@ -4,7 +4,7 @@
  * index.html): Syne + DM Sans, cream/navy palette, light and dark theme.
  * Styles live in css/templates/reference.css.
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref, EXT_ATTR, linkAttrs } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 
 export const meta = {
@@ -48,7 +48,7 @@ function renderHero(m) {
     return `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer" class="social-link" title="${esc(label)}" aria-label="${esc(label)}">${platformIcon(l.platform, 18)}</a>`;
   }).join('');
   const mail = m.email
-    ? `<a href="${esc(mailtoHref(m.email))}" class="social-link" title="Email" aria-label="Email">${icon('mail', 18)}</a>` : '';
+    ? `<a href="${esc(mailtoHref(m.email))}"${EXT_ATTR} class="social-link" title="Email" aria-label="Email">${icon('mail', 18)}</a>` : '';
   const portrait = m.avatar
     ? `<img src="${esc(m.avatar)}" alt="${esc(m.name)}">`
     : `<div class="hero-initials" aria-hidden="true">${esc(initials(m.name))}</div>`;
@@ -84,7 +84,7 @@ function renderAbout(m) {
 
   const rows = [['Name', esc(m.name)]];
   if (m.location) rows.push(['Location', esc(m.location)]);
-  if (m.email) rows.push(['Email', `<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a>`]);
+  if (m.email) rows.push(['Email', `<a href="${esc(mailtoHref(m.email))}"${EXT_ATTR}>${esc(m.email)}</a>`]);
   if (m.whatsapp) rows.push(['Phone', `<a href="tel:${esc(m.whatsapp)}">${esc(m.whatsapp)}</a>`]);
   if (m.website) rows.push(['Website', `<a href="${esc(m.website)}" target="_blank" rel="noopener noreferrer">${esc(m.website.replace(/^https?:\/\//, ''))}</a>`]);
   m.links.forEach(l => {
@@ -226,7 +226,7 @@ function renderContact(m) {
     cards.push([l.platform, l.label || l.platform, href.replace(/^https?:\/\/(www\.)?/, ''), href]);
   });
   const cardHtml = cards.map(([ic, lbl, val, href]) => {
-    const ext = /^https?:/.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '';
+    const ext = linkAttrs(href);
     return `<a href="${esc(href)}"${ext} class="contact-card"><span class="icon">${platformIcon(ic, 22)}</span><div><div class="lbl">${esc(lbl)}</div><div class="val">${esc(val)}</div></div></a>`;
   }).join('');
   const form = m.email ? `

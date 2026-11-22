@@ -4,10 +4,10 @@
  * markup, so every template keeps rendering the signed-in user's own data.
  * The contact form keeps the ids/field names that runtime.js binds to.
  */
-import { esc, safeUrl, normalizeUrl, mailtoHref } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, mailtoHref, EXT_ATTR, linkAttrs } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 
-export const extAttr = href => (/^https?:/i.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '');
+export const extAttr = linkAttrs;
 
 export const firstName = m => {
   const n = String(m.name || '').trim();
@@ -68,7 +68,7 @@ export function socialsHtml(m, { wrap = 'ph-socials', item = 'ph-social', size =
     const label = l.label || l.platform;
     return `<a class="${item}" href="${esc(href)}"${extAttr(href)} aria-label="${esc(label)}" title="${esc(label)}">${platformIcon(l.platform, size)}</a>`;
   }).filter(Boolean).slice(0, limit);
-  if (m.email) items.push(`<a class="${item}" href="${esc(mailtoHref(m.email))}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
+  if (m.email) items.push(`<a class="${item}" href="${esc(mailtoHref(m.email))}"${EXT_ATTR} aria-label="Email" title="Email">${icon('mail', size)}</a>`);
   return items.length ? `<div class="${wrap}">${items.join('')}</div>` : '';
 }
 

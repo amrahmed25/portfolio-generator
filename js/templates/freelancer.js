@@ -4,7 +4,7 @@
  * cards right after the hero, inset-image project cards, expertise meters, and a
  * contact band with the form. Stats are computed from the user's own data.
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref, EXT_ATTR, linkAttrs } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 import { firstName, initialsOf, truncate, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, yearsOfExperience, navControls } from './parts.js';
 
@@ -66,7 +66,7 @@ const BODY = {
     const facts = [
       m.location ? `<li>${icon('pin', 17)}<span>${esc(m.location)}</span></li>` : '',
       m.currentCompany ? `<li>${icon('briefcase', 17)}<span>${esc(m.currentCompany)}</span></li>` : '',
-      m.email ? `<li>${icon('mail', 17)}<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></li>` : '',
+      m.email ? `<li>${icon('mail', 17)}<a href="${esc(mailtoHref(m.email))}"${EXT_ATTR}>${esc(m.email)}</a></li>` : '',
       site ? `<li>${icon('globe', 17)}<a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a></li>` : ''
     ].filter(Boolean);
     return `
@@ -164,7 +164,7 @@ export function render(m) {
   <a class="fl-logo" href="#top"><span class="fl-logo-mark" aria-hidden="true">${esc(initialsOf(m.name).slice(0, 1))}</span>${esc(first)}</a>
   <div class="fl-bar-links">${links}</div>
   <div class="fl-bar-right">
-    ${hireHref ? `<a class="ph-btn ph-btn-primary fl-hire" href="${hireHref}">Hire me</a>` : ''}
+    ${hireHref ? `<a class="ph-btn ph-btn-primary fl-hire" href="${hireHref}"${extAttr(hireHref)}>Hire me</a>` : ''}
     ${navControls()}
   </div>
 </nav>
@@ -177,7 +177,7 @@ export function render(m) {
       ${m.title ? `<p class="fl-role">${esc(m.title)}</p>` : ''}
       ${m.about ? `<p class="fl-lead">${esc(truncate(m.about, 180))}</p>` : ''}
       <div class="ph-actions">
-        ${hireHref ? `<a class="ph-btn ph-btn-primary" href="${hireHref}">Hire me</a>` : ''}
+        ${hireHref ? `<a class="ph-btn ph-btn-primary" href="${hireHref}"${extAttr(hireHref)}>Hire me</a>` : ''}
         ${hasSection(m, 'services') ? '<a class="ph-btn" href="#services">View services</a>' : (hasSection(m, 'projects') ? '<a class="ph-btn" href="#projects">See my work</a>' : '')}
       </div>
       ${socialsHtml(m, { wrap: 'fl-socials', item: 'fl-social', size: 18 })}
@@ -193,5 +193,5 @@ export function render(m) {
 ${present.map(k => (k === 'contact' ? contactBand(m) : section(m, k))).join('\n')}
 </main>
 <footer class="fl-footer"><div class="fl-wrap"><p>${esc(m.name)}${m.title ? ' \u00b7 ' + esc(m.title) : ''}${m.location ? ' \u00b7 ' + esc(m.location) : ''}</p></div></footer>
-${m.email ? `<a class="ph-btn ph-btn-primary fl-sticky" href="${hireHref}">Hire me</a>` : ''}`;
+${m.email ? `<a class="ph-btn ph-btn-primary fl-sticky" href="${hireHref}"${extAttr(hireHref)}>Hire me</a>` : ''}`;
 }

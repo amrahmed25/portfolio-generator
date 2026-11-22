@@ -149,9 +149,10 @@ async function loadPosts(reset = false) {
           id,
           full_name,
           title,
-          avatar_url
+          avatar_url,
+          user_handle
         ),
-        portfolios ( slug, is_published )
+        portfolios ( slug, is_published, portfolio_number )
       `)
       .order('created_at', { ascending: false })
       .range(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE - 1);
@@ -215,7 +216,9 @@ function renderPost(post) {
   const authorName = sanitize(profile.full_name || 'Anonymous');
   const authorTitle = sanitize(profile.title || '');
   // The post links to the author's portfolio only when one was attached and is published.
-  const linked = post.portfolios && post.portfolios.is_published ? post.portfolios.slug : '';
+  // (A post can only link a portfolio its author owns, so the author's handle is the owner's handle.)
+  const linked = post.portfolios && post.portfolios.is_published
+    ? { slug: post.portfolios.slug, portfolio_number: post.portfolios.portfolio_number, user_handle: profile.user_handle } : null;
   const authorUrl = linked ? sanitize(publicUrl(linked)) : '';
   const avatarUrl   = profile.avatar_url || '';
   const content     = sanitize(post.content || '');
@@ -636,8 +639,8 @@ async function createPost(data) {
     .select(`
       id, content, category, tags, image_url, portfolio_id,
       created_at, updated_at, user_id,
-      profiles ( id, full_name, title, avatar_url ),
-      portfolios ( slug, is_published )
+      profiles ( id, full_name, title, avatar_url, user_handle ),
+      portfolios ( slug, is_published, portfolio_number )
     `)
     .single();
 
@@ -667,8 +670,8 @@ async function editPost(postId, data) {
     .select(`
       id, content, category, tags, image_url, portfolio_id,
       created_at, updated_at, user_id,
-      profiles ( id, full_name, title, avatar_url ),
-      portfolios ( slug, is_published )
+      profiles ( id, full_name, title, avatar_url, user_handle ),
+      portfolios ( slug, is_published, portfolio_number )
     `)
     .single();
 

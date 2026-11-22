@@ -32,12 +32,34 @@ export function safeUrl(url, { allowMail = false, allowTel = false } = {}) {
  */
 export const EMAIL_PATTERN = /^[^\s@<>"',;]+@[^\s@<>"',;]+\.[^\s@<>"',;]+$/;
 
-/** Returns "mailto:<address>" for a valid address, otherwise '' (callers then render no link). */
-export function mailtoHref(email) {
-  const v = String(email ?? '').trim();
-  return EMAIL_PATTERN.test(v) ? `mailto:${v}` : '';
+/** Attributes for links that must open OUTSIDE the sandboxed portfolio iframe. */
+export const EXT_ATTR = ' target="_blank" rel="noopener noreferrer"';
+
+/**
+ * Attributes for an <a href>. External http(s) links AND mailto: links open in a new browsing
+ * context. A mailto: link that navigates the iframe itself breaks when the visitor's mail
+ * handler is a web client (e.g. Gmail): the iframe is sent to mail.google.com, which refuses
+ * to be framed ("mail.google.com refused to connect").
+ */
+export function linkAttrs(href) {
+  return /^(https?|mailto):/i.test(String(href ?? '')) ? EXT_ATTR : '';
 }
 
+/**
+ * Returns a properly encoded "mailto:" URL, or '' when the address is empty/invalid.
+ * The address is percent-encoded part by part so characters such as ? & # % can never start a
+ * header (?bcc=...) or break the URL. Optional subject/body are encoded with encodeURIComponent.
+ */
+export function mailtoHref(email, { subject, body } = {}) {
+  const v = String(email ?? '').trim();
+  if (!EMAIL_PATTERN.test(v)) return '';
+  const at = v.lastIndexOf('@');
+  const enc = s => encodeURIComponent(s).replace(/%2B/gi, '+');
+  const params = [];
+  if (subject) params.push('subject=' + encodeURIComponent(subject));
+  if (body) params.push('body=' + encodeURIComponent(body));
+  return `mailto:${enc(v.slice(0, at))}@${enc(v.slice(at + 1))}${params.length ? '?' + params.join('&') : ''}`;
+}
 
 /** Adds https:// to bare domains typed by users ("github.com/me"). */
 export function normalizeUrl(url) {

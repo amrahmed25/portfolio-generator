@@ -1,5 +1,5 @@
 # Netlify URL Rewrite Rules
-# Maps clean /u/:slug URLs to the public-portfolio.html page
+# Maps /u/:handle/:number (canonical) and legacy /u/:slug URLs to the public-portfolio.html page
 # The 200 status means a rewrite (not a redirect) — the browser URL stays clean
 
 /u/:handle/:number  /public-portfolio.html?u=:handle&n=:number  200

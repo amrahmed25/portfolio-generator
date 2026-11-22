@@ -7,7 +7,7 @@
   <script>
 (function () {
   var path = window.location.pathname;
-  var match = path.match(/^(.*\/)u\/[^/]+(?:\/\d+)?\/?$/);
+  var match = path.match(/^(.*\/)u\/[^/]+(?:\/[^/]+)?\/?$/);
   var base = match ? match[1] : new URL('.', window.location.href).pathname;
 
   document.write('<base href="' + base + '">');

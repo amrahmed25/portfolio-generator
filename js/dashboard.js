@@ -13,6 +13,7 @@ import { createPortfolio as createPortfolioRecord, publicUrl } from './portfolio
    GLOBALS
    ───────────────────────────────────────────── */
 let _currentUser = null;
+let _ownerHandle = null;   // the signed-in user's profiles.user_handle (first half of every public URL)
 let _allPortfolios = [];
 
 /* ─────────────────────────────────────────────
@@ -140,7 +141,7 @@ function _renderStats({ total, published, views, posts }) {
 async function loadPortfolios(userId) {
   const { data, error } = await supabase
     .from('portfolios')
-    .select('id, title, slug, template_id, is_published, view_count, cover_url, created_at, updated_at')
+    .select('id, title, slug, portfolio_number, template_id, is_published, view_count, cover_url, created_at, updated_at')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false });
 
@@ -235,7 +236,7 @@ function renderPortfolioCard(portfolio) {
   const previewBtn = document.createElement('a');
   previewBtn.className = 'card-action-btn btn-preview';
   previewBtn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> <span>View</span>`;
-  applyViewState(previewBtn, portfolio.slug, portfolio.is_published);
+  applyViewState(previewBtn, _urlTarget(portfolio), portfolio.is_published);
   actions.appendChild(previewBtn);
 
   // Publish/Unpublish
@@ -363,6 +364,11 @@ async function deletePortfolio(portfolioId) {
   }
 }
 
+/** Portfolio row + owner handle -> what publicUrl() needs for /u/{handle}/{number}. */
+function _urlTarget(portfolio) {
+  return portfolio ? { slug: portfolio.slug, portfolio_number: portfolio.portfolio_number, user_handle: _ownerHandle } : null;
+}
+
 /* ─────────────────────────────────────────────
    TOGGLE PUBLISH
    ───────────────────────────────────────────── */
@@ -370,9 +376,10 @@ async function deletePortfolio(portfolioId) {
  * Points the "View" button at the public page when the portfolio is published,
  * otherwise shows it as unavailable instead of linking to a page that would 404.
  */
-function applyViewState(btn, slug, isPublished) {
-  if (isPublished && slug) {
-    btn.href = publicUrl(slug);
+function applyViewState(btn, target, isPublished) {
+  const hasTarget = typeof target === 'string' ? !!target : !!(target && (target.slug || target.user_handle));
+  if (isPublished && hasTarget) {
+    btn.href = publicUrl(target);
     btn.target = '_blank';
     btn.rel = 'noopener noreferrer';
     btn.removeAttribute('aria-disabled');
@@ -428,8 +435,8 @@ async function togglePublish(portfolioId, currentState) {
 
     // Update the View button
     const viewBtn = document.querySelector(`[data-portfolio-id="${portfolioId}"] .btn-preview`);
-    const slug = (_allPortfolios.find(p => p.id === portfolioId) || {}).slug;
-    if (viewBtn) applyViewState(viewBtn, slug, newState);
+    const target = _urlTarget(_allPortfolios.find(p => p.id === portfolioId));
+    if (viewBtn) applyViewState(viewBtn, target, newState);
 
     // Update stats
     loadStats(_currentUser.id);
@@ -443,8 +450,9 @@ async function togglePublish(portfolioId, currentState) {
 /* ─────────────────────────────────────────────
    COPY PORTFOLIO URL
    ───────────────────────────────────────────── */
-async function copyPortfolioUrl(slug) {
-  const url = publicUrl(slug);
+async function copyPortfolioUrl(target) {
+  // `target` is a portfolio row (preferred) or, for backward compatibility, a slug string.
+  const url = publicUrl(typeof target === 'string' ? target : _urlTarget(target));
   try {
     await copyToClipboard(url);
     showToast('Portfolio link copied to clipboard.', 'success');
@@ -768,10 +776,11 @@ async function loadDashboard() {
   try {
     const { data } = await supabase
       .from('profiles')
-      .select('full_name, avatar_url')
+      .select('full_name, avatar_url, user_handle')
       .eq('id', user.id)
       .single();
     profile = data;
+    _ownerHandle = (data && data.user_handle) || null;
   } catch (_) { /* profile may not exist */ }
 
   // 5. Update UI with user info

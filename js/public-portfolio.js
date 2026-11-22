@@ -1,12 +1,15 @@
 /**
  * public-portfolio.js
- * Public page for a published portfolio. Looks the portfolio up by slug,
- * renders it with the same renderer the builder preview uses, and wires the
- * share bar. Works for both /u/<slug> (rewritten) and public-portfolio.html?u=<slug>.
+ * Public page for a published portfolio. Resolves /u/{user_handle}/{number} (owner handle +
+ * per-user portfolio number), still accepts legacy /u/<slug> links and canonicalises them,
+ * renders with the same renderer the builder preview uses, and wires the share bar.
+ * Also works as public-portfolio.html?u=<handle>&n=<number> on hosts without rewrites.
  */
 import supabase from './supabase-client.js';
 import { showToast, copyToClipboard } from './utils.js';
 import { normalizeData, buildDocument } from './portfolio-renderer.js';
+import { parseRoute, fromPublicNumber } from './portfolio-url.js';
+import { publicUrl } from './portfolio-service.js';
 
 const $ = sel => document.querySelector(sel);
 const STATES = ['state-not-found', 'state-not-published', 'state-error'];
@@ -17,28 +20,14 @@ const CHILD_TABLES = {
   certifications: 'portfolio_certifications', links: 'portfolio_links'
 };
 
-/**
- * Works out which portfolio the URL points at. Supported forms:
- *   /u/<slug>                       (existing links, unchanged)
- *   /u/<user_handle>/<number>       (handle + per-user portfolio number)
- *   public-portfolio.html?u=<slug>  or  ?u=<user_handle>&n=<number>   (hosts without rewrites)
- * Returns { slug } | { handle, number } | null.
- */
-function readRoute() {
-  const params = new URLSearchParams(window.location.search);
-  const two = window.location.pathname.match(/\/u\/([^/]+)\/(\d+)\/?$/);
-  if (two) return { handle: decodeURIComponent(two[1]).trim().toLowerCase(), number: Number(two[2]) };
-  const one = window.location.pathname.match(/\/u\/([^/]+)\/?$/);
-  const raw = (one ? decodeURIComponent(one[1]) : params.get('u') || '').trim().toLowerCase();
-  if (!raw) return null;
-  const n = params.get('n');
-  if (!one && n !== null && /^\d+$/.test(n)) return { handle: raw, number: Number(n) };
-  return { slug: raw };
-}
+/** URL the share/copy buttons use. Starts as the current URL; becomes the canonical one after load. */
+let shareUrl = window.location.href;
 
 function showState(id) {
   $('#portfolio-container').style.display = 'none';
   STATES.forEach(s => document.getElementById(s).classList.toggle('visible', s === id));
+  // Not-found / unpublished / error pages must never be indexed under a portfolio URL.
+  setMeta('robots', 'noindex');
 }
 
 function hideLoading() {
@@ -80,17 +69,42 @@ function renderFrame(model) {
 
 async function findPortfolio(route) {
   if (route.slug) return supabase.from('portfolios').select('*').eq('slug', route.slug).maybeSingle();
-  // handle + number: resolve the handle through the public profiles table first
+
+  // /u/{handle}/{number}: the number must be a valid public number, otherwise it is simply "not found".
+  const portfolioNumber = fromPublicNumber(route.rawNumber);
+  if (portfolioNumber === null || !route.handle) return { data: null, error: null };
+
+  // Resolve the owner through the public profiles table, then the portfolio by (owner, number),
+  // so two users can both have a portfolio "1" and a user with several always gets the right one.
   const { data: owner, error } = await supabase.from('profiles').select('id').eq('user_handle', route.handle).maybeSingle();
   if (error) return { data: null, error };
   if (!owner) return { data: null, error: null };
-  return supabase.from('portfolios').select('*').eq('user_id', owner.id).eq('portfolio_number', route.number).maybeSingle();
+  return supabase.from('portfolios').select('*').eq('user_id', owner.id).eq('portfolio_number', portfolioNumber).maybeSingle();
+}
+
+/**
+ * Makes the address bar (and the share/copy buttons) show the canonical /u/{handle}/{number}
+ * URL, whichever URL the visitor arrived on (legacy slug, upper-case handle, ...).
+ * history.replaceState = a redirect without a second page load, so nothing flashes or reloads.
+ */
+function canonicalize(portfolio, profile) {
+  if (!profile || !profile.user_handle) return;
+  const canonical = publicUrl({ user_handle: profile.user_handle, portfolio_number: portfolio.portfolio_number });
+  shareUrl = canonical;
+  let link = document.querySelector('link[rel="canonical"]');
+  if (!link) { link = document.createElement('link'); link.rel = 'canonical'; document.head.appendChild(link); }
+  link.href = canonical;
+  setMeta('og:url', canonical);
+  if (canonical !== window.location.href) {
+    try { window.history.replaceState(window.history.state, '', canonical); } catch (_) { /* e.g. file:// */ }
+  }
 }
 
 async function loadPortfolio(route) {
   try {
     const { data: portfolio, error } = await findPortfolio(route);
     if (error) throw error;
+    // Missing, deleted, or not visible to this visitor (RLS hides unpublished rows from everyone but the owner).
     if (!portfolio) { hideLoading(); showState('state-not-found'); return; }
     if (!portfolio.is_published) { hideLoading(); showState('state-not-published'); return; }
 
@@ -112,6 +126,7 @@ async function loadPortfolio(route) {
 
     renderFrame(model);
     applyMeta(model, model.avatar);
+    canonicalize(portfolio, profileRes.data);
     hideLoading();
 
     // Count the view; a failure here must never affect the page.
@@ -124,16 +139,16 @@ async function loadPortfolio(route) {
 }
 
 function initShare() {
-  const url = window.location.href;
+  // shareUrl is read at click time so it reflects the canonical URL once the portfolio has loaded.
   $('#btn-copy-link').addEventListener('click', async () => {
-    const ok = await copyToClipboard(url);
+    const ok = await copyToClipboard(shareUrl);
     showToast(ok ? 'Link copied to clipboard.' : 'Could not copy the link.', ok ? 'success' : 'error');
   });
   if (navigator.share) {
     const btn = $('#btn-native-share');
     btn.style.display = 'inline-flex';
     btn.addEventListener('click', async () => {
-      try { await navigator.share({ title: document.title, url }); }
+      try { await navigator.share({ title: document.title, url: shareUrl }); }
       catch (e) { if (e.name !== 'AbortError') showToast('Could not share.', 'error'); }
     });
   }
@@ -141,7 +156,7 @@ function initShare() {
 
 function init() {
   initShare();
-  const route = readRoute();
+  const route = parseRoute(window.location.pathname, window.location.search);
   if (!route) {
     document.title = 'Portfolio Not Found | PortfolioHub';
     hideLoading();

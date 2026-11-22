@@ -5,7 +5,7 @@
  * large case studies; skills are set as typographic text, not chips or bars.
  * All content comes from the model `m`.
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref, EXT_ATTR, linkAttrs } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 import { firstName, initialsOf, truncate, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, navControls } from './parts.js';
 
@@ -53,7 +53,7 @@ const BODY = {
     const facts = [
       m.location ? `<li>${icon('pin', 15)} ${esc(m.location)}</li>` : '',
       m.currentCompany ? `<li>${icon('briefcase', 15)} ${esc(m.currentCompany)}</li>` : '',
-      m.email ? `<li>${icon('mail', 15)} <a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></li>` : '',
+      m.email ? `<li>${icon('mail', 15)} <a href="${esc(mailtoHref(m.email))}"${EXT_ATTR}>${esc(m.email)}</a></li>` : '',
       site ? `<li>${icon('globe', 15)} <a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a></li>` : ''
     ].filter(Boolean);
     return `

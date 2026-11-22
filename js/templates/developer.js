@@ -4,7 +4,7 @@
  * file tab. Skills render as a JSON block with meters, projects as repo rows,
  * experience as a commit-style log. Dark by default. All content comes from the model `m`.
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref, EXT_ATTR, linkAttrs } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 import { firstName, initialsOf, extAttr, tagList, levelOf, safeSite, contactItems, socialsHtml, contactFormHtml, navControls } from './parts.js';
 
@@ -44,7 +44,7 @@ const BODY = {
     const facts = [
       ['location', m.location ? esc(m.location) : ''],
       ['company', m.currentCompany ? esc(m.currentCompany) : ''],
-      ['email', m.email ? `<a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a>` : ''],
+      ['email', m.email ? `<a href="${esc(mailtoHref(m.email))}"${EXT_ATTR}>${esc(m.email)}</a>` : ''],
       ['website', site ? `<a href="${esc(site)}"${extAttr(site)}>${esc(site.replace(/^https?:\/\//, ''))}</a>` : '']
     ].filter(f => f[1]);
     return `

@@ -99,7 +99,7 @@ click(w, doc.getElementById('publish-btn'));
 await sleep(500);
 ok(db.portfolios[0].is_published === true, 'C1 publish sets is_published');
 ok(doc.getElementById('publish-btn-text').textContent === 'Unpublish' && !!doc.getElementById('view-live-btn'), 'C2 UI reflects published state + View live link');
-ok(doc.getElementById('view-live-btn').href.includes('public-portfolio.html?u=amr-ahmed'), 'C3 live link uses query form on localhost', doc.getElementById('view-live-btn').href);
+ok(doc.getElementById('view-live-btn').href.endsWith('public-portfolio.html?u=user-one&n=1'), 'C3 live link is the canonical handle/number URL (query form on localhost)', doc.getElementById('view-live-btn').href);
 
 // ---------- Flow B: refresh and edit ----------
 p = await openPage('portfolio-builder.html', '?id=P1', db, U1, code); await sleep(600);

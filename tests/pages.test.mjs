@@ -73,7 +73,7 @@ db.community_posts.push({ id: 'c1', user_id: 'U1', portfolio_id: 'P1', content: 
 p = await openPage('community.html', '', db, U1, code); await sleep(500);
 ok(p.doc.querySelectorAll('.post-card').length === 1, 'M1 community feed renders posts', String(p.doc.querySelectorAll('.post-card').length));
 ok(!p.errors.length, 'M2 no console errors while loading community', p.errors.join(' / '));
-ok(!!p.doc.querySelector('.post-portfolio-btn') && p.doc.querySelector('.post-portfolio-btn').href.includes('amr-ahmed') === false && p.doc.querySelector('.post-portfolio-btn').href.includes('u1abc-demo-x1y2'), 'M3 linked published portfolio shows a working View Portfolio link', p.doc.querySelector('.post-portfolio-btn')?.href);
+ok(!!p.doc.querySelector('.post-portfolio-btn') && p.doc.querySelector('.post-portfolio-btn').href.includes('amr-ahmed') === false && p.doc.querySelector('.post-portfolio-btn').href.endsWith('u=user-one&n=1'), 'M3 linked published portfolio shows a working View Portfolio link', p.doc.querySelector('.post-portfolio-btn')?.href);
 ok(!!p.doc.querySelector('.post-edit-btn') && !!p.doc.querySelector('.post-delete-btn'), 'M4 owner sees edit/delete');
 p = await openPage('community.html', '', db, { id: 'U2' }, code); await sleep(500);
 ok(!p.doc.querySelector('.post-edit-btn') && !p.doc.querySelector('.post-delete-btn'), 'M5 other users do not see edit/delete');

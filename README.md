@@ -7,7 +7,7 @@ A portfolio builder built with plain HTML, CSS and JavaScript (ES modules) on Su
 - Sign up, log in and manage portfolios from a dashboard.
 - Edit a portfolio in the builder (`portfolio-builder.html`): personal info, about, skills, experience, education, certifications, projects, services, links, template, accent colour and section visibility. Changes autosave and the preview updates as you type.
 - Four templates: **Reference** (a data-driven recreation of the owner's own portfolio page), **Developer**, **Creative** and **Freelancer**. All four render from the same data.
-- Publish a portfolio to get a public page at `/u/<slug>`.
+- Publish a portfolio to get a public page at `/u/<user_handle>/<number>` (for example `/u/aammr/1` is the first portfolio of the user whose handle is `aammr`). Old `/u/<slug>` links keep working and redirect to the new address.
 - Explore published portfolios, share posts in the community feed (with optional image upload) and edit your profile.
 
 ## Project layout
@@ -32,11 +32,11 @@ A portfolio builder built with plain HTML, CSS and JavaScript (ES modules) on Su
 
 ## Run locally
 
-Serve the folder with any static server, for example `python3 -m http.server 8080`, and open `http://localhost:8080`. Clean `/u/<slug>` URLs need the rewrite rules, so locally the app links to `public-portfolio.html?u=<slug>` instead.
+Serve the folder with any static server, for example `python3 -m http.server 8080`, and open `http://localhost:8080`. Clean `/u/<user_handle>/<number>` URLs (and the legacy `/u/<slug>`) need the rewrite rules, so locally the app links to `public-portfolio.html?u=<slug>` instead.
 
 ## Deploy
 
-- **Vercel**: `vercel.json` rewrites `/u/:slug` to the public page and sends security headers. CSS and JS are revalidated on every load because the file names are not hashed.
+- **Vercel**: `vercel.json` rewrites `/u/:handle/:number` (and the legacy `/u/:slug`) to the public page and sends security headers. CSS and JS are revalidated on every load because the file names are not hashed.
 - **Netlify**: `_redirects` contains the same rewrite.
 
 ## Adding a template

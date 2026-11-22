@@ -3,7 +3,7 @@
  * They emit neutral "ph-*" markup; each template's stylesheet decides the look.
  * (The Reference template keeps its own markup to stay faithful to the original page.)
  */
-import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref } from './helpers.js';
+import { esc, safeUrl, normalizeUrl, paragraphs, dateRange, yearRange, hasSection, mailtoHref, EXT_ATTR, linkAttrs } from './helpers.js';
 import { icon, platformIcon } from './icons.js';
 
 export const NAV_ORDER = [
@@ -13,7 +13,7 @@ export const NAV_ORDER = [
 
 export const tags = list => (list || []).filter(Boolean).map(t => `<span class="ph-tag">${esc(t)}</span>`).join('');
 export const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
-const ext = href => (/^https?:/.test(href) ? ' target="_blank" rel="noopener noreferrer"' : '');
+const ext = linkAttrs;
 
 export function sectionBlock(id, label, heading, inner, extraClass = '') {
   return `
@@ -49,7 +49,7 @@ export function socialRow(m, size = 18) {
     const label = l.label || l.platform;
     return `<a class="ph-social" href="${esc(href)}"${ext(href)} aria-label="${esc(label)}" title="${esc(label)}">${platformIcon(l.platform, size)}</a>`;
   });
-  if (m.email) items.push(`<a class="ph-social" href="${esc(mailtoHref(m.email))}" aria-label="Email" title="Email">${icon('mail', size)}</a>`);
+  if (m.email) items.push(`<a class="ph-social" href="${esc(mailtoHref(m.email))}"${EXT_ATTR} aria-label="Email" title="Email">${icon('mail', size)}</a>`);
   return items.length ? `<div class="ph-socials">${items.join('')}</div>` : '';
 }
 
@@ -64,7 +64,7 @@ export const aboutBody = m => `
       <div class="ph-prose">${paragraphs(m.about).map(p => `<p>${esc(p)}</p>`).join('')}</div>
       <dl class="ph-facts">
         ${m.location ? `<div><dt>Location</dt><dd>${esc(m.location)}</dd></div>` : ''}
-        ${m.email ? `<div><dt>Email</dt><dd><a href="${esc(mailtoHref(m.email))}">${esc(m.email)}</a></dd></div>` : ''}
+        ${m.email ? `<div><dt>Email</dt><dd><a href="${esc(mailtoHref(m.email))}"${EXT_ATTR}>${esc(m.email)}</a></dd></div>` : ''}
         ${m.website ? `<div><dt>Website</dt><dd><a href="${esc(m.website)}" target="_blank" rel="noopener noreferrer">${esc(m.website.replace(/^https?:\/\//, ''))}</a></dd></div>` : ''}
         ${m.currentCompany ? `<div><dt>Currently at</dt><dd>${esc(m.currentCompany)}</dd></div>` : ''}
       </dl>

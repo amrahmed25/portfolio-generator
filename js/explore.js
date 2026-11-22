@@ -136,10 +136,11 @@ async function fetchAllPortfolios() {
     .select(`
       id,
       slug,
+      portfolio_number,
       template_id,
       headline,
       created_at,
-      profiles ( id, full_name, title, avatar_url, bio, role, location ),
+      profiles ( id, full_name, title, avatar_url, bio, role, location, user_handle ),
       portfolio_skills ( name, order_index )
     `)
     .eq('is_published', true)
@@ -262,7 +263,7 @@ function renderPortfolioCard(portfolio, profile) {
 
   const bioText = bio ? truncateText(bio, 90) : '';
 
-  const portfolioUrl = slug ? sanitize(publicUrl(slug)) : '#';
+  const portfolioUrl = slug ? sanitize(publicUrl({ slug, portfolio_number: portfolio.portfolio_number, user_handle: profile.user_handle })) : '#';
 
   const card = document.createElement('article');
   card.className = 'portfolio-card';

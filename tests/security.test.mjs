@@ -84,21 +84,7 @@ for (const id of Object.keys(TEMPLATES)) {
   ok(!/allow-same-origin/.test(pub + bld.slice(bld.indexOf('sandbox:'), bld.indexOf('sandbox:') + 200)), 'E5 sandbox still has no allow-same-origin');
 }
 
-// ---------- 4. public routes ----------
-{
-  const code = await bundle('js/public-portfolio.js');
-  const db = seed(); Object.assign(db.portfolios[0], { is_published: true, slug: 'amr-ahmed', headline: 'Dev' });
-  const frame = p => p.doc.getElementById('portfolio-frame'), vis = (p, id) => p.doc.getElementById(id).classList.contains('visible');
-  let p = await openPage('public-portfolio.html', '', db, null, code, '/u/user-one/0'); await sleep(300);
-  ok(!!frame(p), 'R1 /u/<handle>/<number> renders the portfolio'); ok(db.portfolios[0].view_count === 1, 'R2 view counted for handle route');
-  p = await openPage('public-portfolio.html', '?u=user-one&n=0', db, null, code); await sleep(300); ok(!!frame(p), 'R3 ?u=<handle>&n=<number> works on hosts without rewrites');
-  p = await openPage('public-portfolio.html', '', db, null, code, '/u/amr-ahmed'); await sleep(300); ok(!!frame(p), 'R4 existing /u/<slug> links still work');
-  p = await openPage('public-portfolio.html', '', db, null, code, '/u/user-one/7'); await sleep(300); ok(vis(p, 'state-not-found') && !frame(p), 'R5 unknown number -> not found');
-  p = await openPage('public-portfolio.html', '', db, null, code, '/u/nobody/0'); await sleep(300); ok(vis(p, 'state-not-found'), 'R6 unknown handle -> not found');
-  db.portfolios[0].is_published = false;
-  p = await openPage('public-portfolio.html', '', db, null, code, '/u/user-one/0'); await sleep(300); ok(!frame(p) && vis(p, 'state-not-found'), 'R7 unpublished is invisible to anonymous visitors on the handle route');
-  p = await openPage('public-portfolio.html', '', db, { id: 'U1', user_metadata: {} }, code, '/u/user-one/0'); await sleep(300); ok(!frame(p) && vis(p, 'state-not-published'), 'R8 owner sees the not-published notice, never the page');
-}
+// (public routing tests live in urls.test.mjs)
 
 // ---------- 5. portfolio creation / numbering contract ----------
 {

@@ -27,6 +27,25 @@
       writeTheme(next);
     });
   }
+  // mailto: links must never navigate THIS (sandboxed, framed) document. If the visitor's mail
+  // handler is a web client such as Gmail, a frame navigation ends in "mail.google.com refused to
+  // connect". So every mailto: link opens in its own browsing context (target=_blank), whether it was
+  // rendered with these attributes or added later. The click is never cancelled: the browser still hands
+  // the mailto: URL to the visitor's mail application / configured handler.
+  function isMailLink(a) { return !!a && /^mailto:/i.test(a.getAttribute('href') || ''); }
+  function openMailLinkOutside(a) {
+    if (a.getAttribute('target') !== '_blank') a.setAttribute('target', '_blank');
+    var rel = (a.getAttribute('rel') || '').split(/\s+/).filter(Boolean);
+    ['noopener', 'noreferrer'].forEach(function (t) { if (rel.indexOf(t) === -1) rel.push(t); });
+    a.setAttribute('rel', rel.join(' '));
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('a[href]'), function (a) { if (isMailLink(a)) openMailLinkOutside(a); });
+  // Capture phase: runs before any other click handler and does not call preventDefault().
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if (isMailLink(a)) { openMailLinkOutside(a); e.stopPropagation(); }
+  }, true);
+
   // Keep portfolio section links inside the rendered document.
 document.addEventListener('click', function (e) {
   var link = e.target.closest('a[href^="#"]');
@@ -168,15 +187,13 @@ if (form) {
         '&su=' + encodeURIComponent(emailSubject) +
         '&body=' + encodeURIComponent(body);
 
-    // Open Gmail directly instead of relying on the default mail application.
-    var gmailWindow = window.open(
-      gmailUrl,
-      '_blank',
-      'noopener,noreferrer'
-    );
-
+    // Gmail Compose always opens in a NEW top-level tab; it is never loaded inside this frame
+    // (Gmail forbids framing). Do not pass "noopener" in the features string: it makes
+    // window.open() return null even when the tab opened, which falsely reports "blocked".
+    var gmailWindow = window.open(gmailUrl, '_blank');
 
     if (gmailWindow) {
+      try { gmailWindow.opener = null; } catch (err) { /* cross-origin: nothing to detach */ }
       show(
         true,
         'Gmail compose opened with your message. Please review it and click Send in Gmail.'
@@ -184,7 +201,7 @@ if (form) {
     } else {
       show(
         false,
-        'Your browser blocked the Gmail window. Allow pop-ups for this site and try again.'
+        'Your browser blocked the Gmail window. Allow pop-ups for this site and try again, or email ' + to + ' directly.'
       );
     }
   });
