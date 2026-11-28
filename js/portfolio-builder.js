@@ -243,7 +243,7 @@ function ensurePreviewFrame() {
   if (previewFrame) return previewFrame;
   previewFrame = h('iframe', {
     id: 'preview-iframe', title: 'Portfolio preview',
-    sandbox: 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols',
+    sandbox: 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols',
     style: 'width:100%;height:100%;border:0;display:block;background:#fff;'
   });
   $('preview-content').replaceChildren(previewFrame);

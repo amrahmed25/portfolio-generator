@@ -8,7 +8,7 @@ A portfolio builder built with plain HTML, CSS and JavaScript (ES modules) on Su
 - Edit a portfolio in the builder (`portfolio-builder.html`): personal info, about, skills, experience, education, certifications, projects, services, links, template, accent colour and section visibility. Changes autosave and the preview updates as you type.
 - Four templates: **Reference** (a data-driven recreation of the owner's own portfolio page), **Developer**, **Creative** and **Freelancer**. All four render from the same data.
 - Publish a portfolio to get a public page at `/u/<user_handle>/<number>` (for example `/u/aammr/1` is the first portfolio of the user whose handle is `aammr`). Old `/u/<slug>` links keep working and redirect to the new address.
-- Explore published portfolios, share posts in the community feed (with optional image upload) and edit your profile.
+- Explore published portfolios (search, filter, sort by newest, oldest or most/least viewed) and edit your profile.
 
 ## Project layout
 
@@ -26,9 +26,11 @@ A portfolio builder built with plain HTML, CSS and JavaScript (ES modules) on Su
 ## Setup
 
 1. Create a Supabase project.
-2. In the SQL editor run `supabase/migrations/schema.sql`, then `supabase/migrations/002_fixes_and_templates.sql`. Both are required: `002` adds columns the app reads (`template_id`, `cover_url`, `headline`, `about`, `sections`, ...), the profile relationships used by Explore and Community, and the storage buckets and policies.
+2. In the SQL editor run `supabase/migrations/schema.sql`, then `supabase/migrations/002_fixes_and_templates.sql`. Both are required: `002` adds columns the app reads (`template_id`, `cover_url`, `headline`, `about`, `sections`, ...), the profile relationship used by Explore, and the storage buckets and policies.
 3. Put your project URL and **publishable (anon) key** in `js/config.js`. Never put a `service_role` or secret key in browser code. Row Level Security protects the data.
 4. In Supabase Auth settings, add your site URL and `reset-password.html` to the redirect URLs.
+5. Run the later migrations (each is idempotent; see the comments at the top of each file): `supabase_portfolio_numbering.sql` (server-side portfolio numbers), `supabase_unique_views.sql` (one view per visitor per portfolio), `supabase_explore_sorting.sql` (Explore search/sort/pagination in the database) and, to harden permissions, `supabase_security_remediation.sql`.
+6. Upgrading an existing project that had the old Community feature? Review `supabase_remove_community.sql` (nothing destructive runs without your approval).
 
 ## Run locally
 

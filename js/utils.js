@@ -81,16 +81,22 @@ function ensureToastStyles() {
       padding: 0; flex-shrink: 0;
     }
     .toast__close:hover { opacity: 1; }
+    .toast__close:focus-visible { opacity: 1; outline: 2px solid currentColor; outline-offset: 2px; border-radius: 4px; }
   `;
   document.head.appendChild(style);
 }
 
+// Status icons are purely decorative (aria-hidden, not interactive). The error icon used to be a
+// literal "✕", which looked like a second close button next to the real one on the right.
 const TOAST_ICONS = {
   success: '✓',
-  error:   '✕',
+  error:   '<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><line x1="12" y1="7.5" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12" y2="16.6"/></svg>',
   warning: '!',
   info:    'ℹ'
 };
+
+// How long the exit animation may run before the toast is removed regardless (ms).
+const TOAST_EXIT_MS = 320;
 
 /**
  * Displays a toast notification.
@@ -108,16 +114,34 @@ export function showToast(message, type = 'success', duration = 3500) {
   toast.innerHTML = `
     <span class="toast__icon" aria-hidden="true">${TOAST_ICONS[type] ?? 'ℹ'}</span>
     <span class="toast__message">${sanitize(message)}</span>
-    <button class="toast__close" aria-label="Dismiss notification">✕</button>
+    <button type="button" class="toast__close" aria-label="Dismiss notification">✕</button>
   `;
 
+  let dismissed = false;
+  let autoTimer = null;
+
+  // One dismissal path for the close button, a click on the toast, Escape and the auto-dismiss timer.
+  // It never waits for a transition/animation event: the stylesheet's entrance animation
+  // (`animation: toastSlideIn ... forwards` in style.css) keeps opacity/transform pinned, so the old
+  // "remove on transitionend" code never fired and the toast stayed on screen forever.
   const dismiss = () => {
-    toast.classList.add('toast--hiding');
-    toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    if (dismissed) return;            // repeated clicks / click + timer cannot double-run
+    dismissed = true;
+    clearTimeout(autoTimer);          // manual dismissal cancels the auto-dismiss timer
+
+    const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) { toast.remove(); return; }
+
+    toast.classList.add('toast--hiding', 'toast-dismissing');   // pages with / without style.css animate out
+    toast.setAttribute('aria-hidden', 'true');
+    toast.style.pointerEvents = 'none';                         // a dismissing toast ignores further clicks
+    setTimeout(() => toast.remove(), TOAST_EXIT_MS);            // guaranteed removal
   };
 
-  toast.querySelector('.toast__close').addEventListener('click', dismiss);
+  // A single listener on the toast: the close button's click bubbles up to it, so there is no
+  // second handler on the button and nothing is registered twice.
   toast.addEventListener('click', dismiss);
+  toast.addEventListener('keydown', (e) => { if (e.key === 'Escape') dismiss(); });
 
   container.appendChild(toast);
 
@@ -127,7 +151,7 @@ export function showToast(message, type = 'success', duration = 3500) {
   });
 
   if (duration > 0) {
-    setTimeout(dismiss, duration);
+    autoTimer = setTimeout(dismiss, duration);
   }
 }
 

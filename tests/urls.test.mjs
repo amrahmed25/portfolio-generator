@@ -18,6 +18,7 @@ ok(U.buildPublicUrl({ user_handle: 'aammr', portfolio_number: 1 }, vercel) === '
 ok(U.buildPublicUrl({ user_handle: 'aammr', portfolio_number: 2 }, vercel) === 'https://site.vercel.app/u/aammr/3', 'U5 third -> /u/aammr/3');
 ok(U.buildPublicUrl({ user_handle: 'AAMMR', portfolio_number: 0 }, vercel).endsWith('/u/aammr/1'), 'U6 handle is lower-cased');
 ok(U.buildPublicUrl({ user_handle: 'aammr', portfolio_number: 0 }, local) === 'http://localhost:8080/public-portfolio.html?u=aammr&n=1', 'U7 hosts without rewrites use the query form');
+ok(['/u/aammr/1', '/u/aammr', '/dashboard.html', '/'].every(pn => U.buildPublicUrl({ user_handle: 'aammr', portfolio_number: 0 }, { ...local, pathname: pn }) === 'http://localhost:8080/public-portfolio.html?u=aammr&n=1'), 'U7b query-form URL is built from the site root even when the page was reached through a /u/... rewrite (no /u/aammr/public-portfolio.html)');
 ok(U.buildPublicUrl('old-slug', vercel) === 'https://site.vercel.app/u/old-slug', 'U8 a plain slug still builds the legacy URL');
 ok(U.buildPublicUrl({ slug: 'old-slug', user_handle: null, portfolio_number: 0 }, vercel).endsWith('/u/old-slug'), 'U9 missing handle falls back to the slug URL (never /u/null/1)');
 ok(!U.buildPublicUrl({ user_handle: 'aammr', portfolio_number: 0 }, vercel).includes('-'.repeat(1) + 'undefined'), 'U10 no undefined in URLs');
@@ -87,7 +88,7 @@ ok(/\/u\/:handle\/:number\s+\/public-portfolio\.html\?u=:handle&n=:number\s+200/
 const html = fs.readFileSync(ROOT + 'public-portfolio.html', 'utf8');
 const re = new RegExp(html.match(/path\.match\((\/.*\/)\)/)[1].slice(1, -1));
 ok(['/u/a/1', '/u/a/abc', '/u/a'].every(x => re.exec(x)?.[1] === '/'), '10d <base> is resolved to the site root for 1- and 2-segment URLs (assets load on refresh)');
-for (const f of ['js/dashboard.js', 'js/portfolio-builder.js', 'js/explore.js', 'js/community.js'])
+for (const f of ['js/dashboard.js', 'js/portfolio-builder.js', 'js/explore.js'])
   ok(!/publicUrl\((?:pf\.slug|slug|portfolio\.slug|state\.portfolio\.slug)\)/.test(fs.readFileSync(ROOT + f, 'utf8')), `11 ${f} no longer builds public links from a bare slug`);
 { // explore cards link to handle/number
   const { bundleCall } = await import('./harness.mjs');

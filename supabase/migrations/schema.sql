@@ -26,12 +26,7 @@
 --     • Authenticated write: YES
 --     • Max file size: 10 MB
 --     • Allowed MIME types: image/*
---
---  4. community-images
---     • Public read: YES
---     • Authenticated write: YES
---     • Max file size: 10 MB
---     • Allowed MIME types: image/*
+
 -- ============================================================
 
 
@@ -219,26 +214,6 @@ COMMENT ON COLUMN public.portfolio_links.platform IS 'Platform key, e.g. linkedi
 
 
 -- ============================================================
--- TABLE: community_posts
--- ============================================================
-CREATE TABLE IF NOT EXISTS public.community_posts (
-    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id      UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    portfolio_id UUID        REFERENCES public.portfolios(id) ON DELETE SET NULL,
-    content      TEXT        NOT NULL,
-    image_url    TEXT,
-    category     TEXT        NOT NULL DEFAULT 'Other',
-    tags         TEXT[]      NOT NULL DEFAULT '{}',
-    is_published BOOLEAN     NOT NULL DEFAULT TRUE,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-COMMENT ON TABLE public.community_posts IS 'Community feed posts created by users.';
-COMMENT ON COLUMN public.community_posts.portfolio_id IS 'Optional link to a portfolio being showcased in the post.';
-
-
--- ============================================================
 -- INDEXES
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_portfolios_user_id          ON public.portfolios(user_id);
@@ -253,9 +228,6 @@ CREATE INDEX IF NOT EXISTS idx_portfolio_education_pid     ON public.portfolio_e
 CREATE INDEX IF NOT EXISTS idx_portfolio_certifications_pid ON public.portfolio_certifications(portfolio_id);
 CREATE INDEX IF NOT EXISTS idx_portfolio_links_pid         ON public.portfolio_links(portfolio_id);
 
-CREATE INDEX IF NOT EXISTS idx_community_posts_user_id     ON public.community_posts(user_id);
-CREATE INDEX IF NOT EXISTS idx_community_posts_category    ON public.community_posts(category);
-CREATE INDEX IF NOT EXISTS idx_community_posts_created_at  ON public.community_posts(created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_profiles_username           ON public.profiles(username);
 
@@ -354,14 +326,6 @@ CREATE TRIGGER trg_portfolio_services_updated_at
     BEFORE UPDATE ON public.portfolio_services
     FOR EACH ROW
     EXECUTE FUNCTION public.update_updated_at();
-
--- Apply to: community_posts
-DROP TRIGGER IF EXISTS trg_community_posts_updated_at ON public.community_posts;
-CREATE TRIGGER trg_community_posts_updated_at
-    BEFORE UPDATE ON public.community_posts
-    FOR EACH ROW
-    EXECUTE FUNCTION public.update_updated_at();
-
 
 -- ------------------------------------------------------------
 -- 3. increment_view_count(portfolio_slug TEXT)
@@ -784,35 +748,6 @@ CREATE POLICY "portfolio_links_delete_own"
               AND p.user_id = auth.uid()
         )
     );
-
-
--- ---- community_posts ----------------------------------------
-ALTER TABLE public.community_posts ENABLE ROW LEVEL SECURITY;
-
--- Anyone can read published posts
-CREATE POLICY "community_posts_select_public"
-    ON public.community_posts
-    FOR SELECT
-    USING (is_published = TRUE OR auth.uid() = user_id);
-
--- Authenticated users can create posts for themselves
-CREATE POLICY "community_posts_insert_own"
-    ON public.community_posts
-    FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
-
--- Authors can update their own posts
-CREATE POLICY "community_posts_update_own"
-    ON public.community_posts
-    FOR UPDATE
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
-
--- Authors can delete their own posts
-CREATE POLICY "community_posts_delete_own"
-    ON public.community_posts
-    FOR DELETE
-    USING (auth.uid() = user_id);
 
 
 -- ============================================================

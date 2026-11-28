@@ -53,9 +53,9 @@ for (const id of Object.keys(TEMPLATES)) {
 ok(Object.values(forms).some(Boolean), 'E10 at least one template renders the Gmail contact form', JSON.stringify(forms));
 
 // ---------- runtime behaviour (real runtime.js executed in jsdom) ----------
-async function boot(tpl) {
+async function boot(tpl, preview = false) {
   const runtime = fs.readFileSync(ROOT + 'js/templates/runtime.js', 'utf8');
-  const html = render(tpl, 'hello@example.com').replace(/<script src="[^"]*runtime\.js"><\/script>/, () => `<script>${runtime}</script>`);
+  const html = (preview ? buildDocument(normalizeData(base(tpl, 'hello@example.com')), { baseUrl: 'https://s.test/', preview: true }) : render(tpl, 'hello@example.com')).replace(/<script src="[^"]*runtime\.js"><\/script>/, () => `<script>${runtime}</script>`);
   const dom = new JSDOM(html, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://s.test/' });
   await new Promise(r => setTimeout(r, 50)); return dom.window;
 }
@@ -78,21 +78,71 @@ for (const tpl of Object.keys(TEMPLATES)) {
 
   const form = d.getElementById('contactForm');
   if (!form) continue;
-  const calls = []; w.open = (...args) => { calls.push(args); return { opener: {} }; };
+  // The portfolio document hands its message to the PARENT page (the relay); fake that parent here.
+  const posted = []; const fakeParent = { postMessage: m => posted.push(m) };
+  Object.defineProperty(w, 'parent', { value: fakeParent, configurable: true });
+  let opened = 0; w.open = () => { opened++; return {}; };
+  const reply = async (data, source = fakeParent) => { const ev = new w.Event('message'); ev.data = data; Object.defineProperty(ev, 'source', { value: source }); w.dispatchEvent(ev); await new Promise(r => setTimeout(r, 5)); };
   const fill = (n, v) => { form.elements[n].value = v; };
-  fill('name', 'Sara & Co'); fill('email', 'sara@example.com'); fill('subject', 'Hi there?'); fill('message', 'Line1\nLine 2 & more');
-  form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-  const url = calls[0] && calls[0][0];
-  ok(calls.length === 1 && url.startsWith('https://mail.google.com/mail/?view=cm&fs=1&to=hello%40example.com'), `G1 ${tpl}: Gmail Compose URL targets the owner`, url);
-  ok(/&su=Portfolio%20Contact%3A%20Sara%20%26%20Co%20-%20Hi%20there%3F/.test(url) && /&body=.*%0A.*%26/.test(url) && !/\s/.test(url), `G2 ${tpl}: subject and body are fully percent-encoded`, url);
-  ok(calls[0][1] === '_blank', `G3 ${tpl}: opens in a NEW tab`);
-  ok(calls[0][2] === undefined || !/noopener/.test(calls[0][2]), `G4 ${tpl}: no "noopener" feature string (it made window.open return null)`);
-  ok(!d.querySelector('iframe') && !/mail\.google\.com/.test(d.body.innerHTML.replace(/<script[\s\S]*?<\/script>/g, '')), `G5 ${tpl}: Gmail is never embedded in the page`);
-  ok(/Gmail compose opened/.test(d.getElementById('formMsg').textContent), `G6 ${tpl}: success message shown when the tab opens`);
-  w.open = () => null; form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-  ok(/blocked/i.test(d.getElementById('formMsg').textContent) && d.getElementById('formMsg').textContent.includes('hello@example.com'), `G7 ${tpl}: blocked pop-up gives a clear message with the address`);
-  calls.length = 0; w.open = (...a) => { calls.push(a); return {}; }; fill('email', 'bad'); form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
-  ok(calls.length === 0, `G8 ${tpl}: invalid visitor email is rejected before opening anything`);
+  const submit = () => form.dispatchEvent(new w.Event('submit', { bubbles: true, cancelable: true }));
+  const msg = () => d.getElementById('formMsg'), btn = () => d.getElementById('sendBtn');
+  const idleLabel = btn().textContent.trim();
+  const valid = () => { fill('name', 'Sara & Co'); fill('email', 'sara@example.com'); fill('subject', 'Hi there?'); fill('message', 'Line1\nLine 2 & more'); };
+  const last = () => posted[posted.length - 1];
+
+  // validation (nothing is sent)
+  submit(); ok(posted.length === 0 && /name/i.test(msg().textContent), `G1 ${tpl}: empty form -> validation message, nothing sent`);
+  fill('name', 'S'); fill('email', 'bad'); fill('message', 'x'); submit();
+  ok(posted.length === 0 && /valid email/i.test(msg().textContent) && form.elements.email.getAttribute('aria-invalid') === 'true', `G2 ${tpl}: invalid visitor email -> message + aria-invalid, nothing sent`);
+  fill('email', 'sara@example.com'); fill('message', ''); submit(); ok(posted.length === 0 && /message/i.test(msg().textContent), `G3 ${tpl}: empty message rejected`);
+  fill('message', 'x'.repeat(5001)); submit(); ok(posted.length === 0 && /5000/.test(msg().textContent), `G3b ${tpl}: over-long message rejected`);
+
+  // loading state + duplicate prevention
+  valid(); submit();
+  const sent = last();
+  ok(posted.length === 1 && sent.source === 'ph-contact' && sent.type === 'submit' && sent.payload.name === 'Sara & Co' && sent.payload.email === 'sara@example.com' && sent.payload.subject === 'Hi there?' && /Line1\nLine 2/.test(sent.payload.message), `G4 ${tpl}: valid submit posts name/email/subject/message to the parent`, JSON.stringify(sent));
+  ok(!('to' in sent.payload) && !('recipient' in sent.payload) && !('cc' in sent.payload) && !('bcc' in sent.payload) && !('from' in sent.payload), `G5 ${tpl}: the browser never sends a recipient`);
+  ok(btn().disabled && btn().textContent.trim() === 'Sending...' && form.getAttribute('aria-busy') === 'true', `G6 ${tpl}: loading state (button disabled, "Sending...")`);
+  submit(); submit(); btn().dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true }));
+  ok(posted.length === 1, `G7 ${tpl}: duplicate submissions while sending are ignored`, String(posted.length));
+  await reply({ source: 'ph-contact', type: 'result', id: 'someone-else', ok: true }); await reply({ source: 'ph-contact', type: 'result', id: sent.id, ok: true }, { not: 'the parent' });
+  ok(btn().disabled && form.elements.name.value === 'Sara & Co', `G8 ${tpl}: results with a wrong id or from a wrong window are ignored`);
+
+  // success -> message + cleared form + button restored
+  await reply({ source: 'ph-contact', type: 'result', id: sent.id, ok: true, code: 'sent' });
+  ok(msg().textContent === 'Message sent successfully.' && msg().className.includes('ok') && !msg().hidden, `G9 ${tpl}: success message only after the parent confirms delivery`);
+  ok(form.elements.name.value === '' && form.elements.message.value === '' && !btn().disabled && btn().textContent.trim() === idleLabel, `G10 ${tpl}: form cleared and button restored after success`, btn().textContent);
+
+  // failure -> input preserved, error + Gmail fallback, can retry
+  valid(); submit(); const second = last();
+  await reply({ source: 'ph-contact', type: 'result', id: second.id, ok: false, code: 'provider_error' });
+  ok(/^Failed to send message\. Please try again\./.test(msg().textContent) && msg().className.includes('err'), `G11 ${tpl}: failure shows the error message`);
+  ok(form.elements.name.value === 'Sara & Co' && form.elements.message.value === 'Line1\nLine 2 & more' && !btn().disabled, `G12 ${tpl}: visitor input preserved and the button re-enabled after a failure`);
+  const gl = msg().querySelector('a');
+  ok(gl && gl.href.startsWith('https://mail.google.com/mail/?view=cm&fs=1&to=hello%40example.com') && /&su=Portfolio%20Contact%3A%20Sara%20%26%20Co%20-%20Hi%20there%3F/.test(gl.href) && /&body=.*%0A.*%26/.test(gl.href) && gl.target === '_blank' && /noopener/.test(gl.rel), `G13 ${tpl}: Gmail Compose is still offered as an encoded, new-tab fallback`, gl && gl.href);
+  submit(); ok(posted.length === 3, `G14 ${tpl}: retry after failure sends again`);
+  await reply({ source: 'ph-contact', type: 'result', id: last().id, ok: false, code: 'rate_limited' });
+  ok(/Too many messages/.test(msg().textContent), `G15 ${tpl}: rate-limit response gets a specific message`);
+  submit(); await reply({ source: 'ph-contact', type: 'result', id: last().id, ok: false, code: 'validation', fields: { email: 'Please enter a valid email address.' } });
+  ok(/valid email/.test(msg().textContent) && form.elements.email.getAttribute('aria-invalid') === 'true', `G16 ${tpl}: server-side validation errors are shown on the field`);
+  submit(); await reply({ source: 'ph-contact', type: 'result', id: last().id, ok: false, code: 'network' });
+  ok(/^Failed to send message/.test(msg().textContent) && !btn().disabled, `G17 ${tpl}: network failure -> error, can retry`);
+
+  // honeypot, Gmail never opened/embedded
+  const trap = form.querySelector('input[name="website"]');
+  ok(trap && trap.getAttribute('aria-hidden') === 'true' && trap.tabIndex === -1 && form.querySelectorAll('input[name="website"]').length === 1, `G18 ${tpl}: invisible honeypot field present exactly once`);
+  trap.value = 'http://spam'; submit(); ok(last().payload.website === 'http://spam', `G19 ${tpl}: honeypot value is forwarded so the server can reject it`);
+  await reply({ source: 'ph-contact', type: 'result', id: last().id, ok: false, code: 'rejected' });
+  ok(opened === 0 && !d.querySelector('iframe') && !/mail\.google\.com/.test(d.body.innerHTML.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<a [^>]*mail\.google\.com[^>]*>/g, '')), `G20 ${tpl}: window.open is never used and nothing is embedded`);
+
+  // builder preview: no delivery attempted
+  { const pw = await boot(tpl, true); const pf = pw.document.getElementById('contactForm'); const pp = []; Object.defineProperty(pw, 'parent', { value: { postMessage: m => pp.push(m) }, configurable: true });
+    pf.elements.name.value = 'S'; pf.elements.email.value = 'a@b.co'; pf.elements.message.value = 'hi'; pf.dispatchEvent(new pw.Event('submit', { bubbles: true, cancelable: true })); await new Promise(r => setTimeout(r, 20));
+    ok(pp.length === 0 && /disabled in the builder preview/.test(pw.document.getElementById('formMsg').textContent), `G21 ${tpl}: the builder preview never sends real email`); }
+  // no parent page at all (document opened on its own)
+  { const sw = await boot(tpl); const sf = sw.document.getElementById('contactForm'); sf.elements.name.value = 'S'; sf.elements.email.value = 'a@b.co'; sf.elements.message.value = 'hi';
+    sf.dispatchEvent(new sw.Event('submit', { bubbles: true, cancelable: true })); await new Promise(r => setTimeout(r, 20));
+    ok(/^Failed to send message/.test(sw.document.getElementById('formMsg').textContent) && sw.document.getElementById('sendBtn').disabled === false, `G22 ${tpl}: without a parent page the form fails honestly (no fake success)`); }
 }
 
 // ---------- the public page iframe ----------
@@ -101,6 +151,8 @@ for (const tpl of Object.keys(TEMPLATES)) {
   ok(/frame\.srcdoc = /.test(pub) && !/frame\.src\s*=/.test(pub), 'F1 portfolio frame is srcdoc only (never navigates to an external page)');
   const sb = pub.match(/setAttribute\('sandbox', '([^']+)'/)[1].split(' ');
   ok(sb.includes('allow-popups') && sb.includes('allow-popups-to-escape-sandbox') && !sb.includes('allow-same-origin'), 'F2 sandbox lets links/popups open outside the frame without granting same-origin', sb.join(' '));
+  ok(sb.includes('allow-forms'), 'F2b public page sandbox has allow-forms (without it Chrome blocks the Send button before the submit event fires)');
+  const bld2 = fs.readFileSync(ROOT + 'js/portfolio-builder.js', 'utf8'); ok(/sandbox: '[^']*allow-forms[^']*'/.test(bld2) && !/sandbox: '[^']*allow-same-origin/.test(bld2), 'F2c builder preview sandbox has allow-forms and no allow-same-origin');
   const gm = fs.readdirSync(ROOT + 'js', { recursive: true }).filter(f => f.endsWith('.js') && /mail\.google\.com/.test(fs.readFileSync(ROOT + 'js/' + f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')));
   ok(gm.length === 1 && gm[0].endsWith('runtime.js'), 'F3 mail.google.com is referenced in exactly one place (the runtime contact form)', gm.join());
 }

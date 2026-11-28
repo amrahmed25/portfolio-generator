@@ -24,7 +24,6 @@ function getNavbarHTML() {
           <li><a href="index.html" class="nav-link" data-page="index">Home</a></li>
           <li><a href="explore.html" class="nav-link" data-page="explore">Explore</a></li>
           <li><a href="templates.html" class="nav-link" data-page="templates">Templates</a></li>
-          <li><a href="community.html" class="nav-link" data-page="community">Community</a></li>
         </ul>
 
         <!-- Auth Section -->
@@ -86,7 +85,6 @@ function getNavbarHTML() {
           <li><a href="index.html" class="nav-mobile-link" data-page="index">Home</a></li>
           <li><a href="explore.html" class="nav-mobile-link" data-page="explore">Explore</a></li>
           <li><a href="templates.html" class="nav-mobile-link" data-page="templates">Templates</a></li>
-          <li><a href="community.html" class="nav-mobile-link" data-page="community">Community</a></li>
         </ul>
         <div class="nav-mobile-auth" id="nav-mobile-auth">
           <div class="nav-mobile-auth-guest" id="nav-mobile-auth-guest">

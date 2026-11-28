@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Offline tests: page modules run in jsdom against an in-memory, schema-aware Supabase mock. They do NOT contact a real Supabase project.",
   "scripts": {
-    "test": "node templates.test.mjs && node builder.test.mjs && node public.test.mjs && node dash.test.mjs && node pages.test.mjs && node profile.test.mjs && node security.test.mjs && node urls.test.mjs && node email.test.mjs"
+    "test": "node templates.test.mjs && node builder.test.mjs && node public.test.mjs && node dash.test.mjs && node pages.test.mjs && node profile.test.mjs && node security.test.mjs && node urls.test.mjs && node email.test.mjs && node toast.test.mjs && node contact-api.test.mjs && node views.test.mjs && node explore.test.mjs && node community-removed.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.0",

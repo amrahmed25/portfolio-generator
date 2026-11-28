@@ -1,4 +1,4 @@
-import { bundle, bundleCall, ROOT, seed, openPage, sleep } from './harness.mjs';
+import { newBrowser, bundle, bundleCall, ROOT, seed, openPage, sleep } from './harness.mjs';
 const code = await bundle('js/public-portfolio.js');
 let pass = 0, fail = 0;
 const ok = (c, n, x = '') => { c ? pass++ : fail++; console.log((c ? 'PASS ' : 'FAIL ') + n + (c ? '' : '  ' + x)); };
@@ -18,12 +18,12 @@ ok(frame(p)?.srcdoc.includes('Amr Ahmed') && frame(p).srcdoc.includes('Wrody'), 
 ok(!frame(p)?.srcdoc.includes('x.com/secret'), 'C6 hidden links are not exposed');
 ok(frame(p)?.getAttribute('sandbox').includes('allow-scripts') && !frame(p).getAttribute('sandbox').includes('allow-same-origin'), 'C7 iframe sandboxed without same-origin');
 ok(p.doc.title.startsWith('Amr Ahmed'), 'C8 document title set', p.doc.title);
-ok(db.portfolios[0].view_count === 1, 'C9 view count incremented once', String(db.portfolios[0].view_count));
+ok(db.portfolios[0].view_count === 1, 'C9 first visit counts one view', String(db.portfolios[0].view_count));
 
-// refresh + clean /u/<slug> URL form
+// refresh + clean /u/<slug> URL form (same browser => same visitor => no new view)
 p = await openPage('public-portfolio.html', '', db, null, code, '/u/amr-ahmed'); await sleep(300);
 ok(!!frame(p) && frame(p).srcdoc.includes('Amr Ahmed'), 'C10 /u/<slug> path resolves the slug');
-ok(db.portfolios[0].view_count === 2, 'C11 refresh counts another view');
+ok(db.portfolios[0].view_count === 2, 'C11 (different browser = different visitor) counts one more view', String(db.portfolios[0].view_count));
 
 // unknown slug / missing slug / unpublished
 p = await openPage('public-portfolio.html', '?u=nope', db, null, code); await sleep(300);

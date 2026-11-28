@@ -66,40 +66,5 @@ ok(p.doc.querySelectorAll('.portfolio-card').length === 12 && p.doc.getElementBy
 click(p.w, p.doc.getElementById('explore-load-more-btn')); await sleep(300);
 ok(p.doc.querySelectorAll('.portfolio-card').length > 12, 'X10 Load More appends the next page', String(p.doc.querySelectorAll('.portfolio-card').length));
 
-// ---------- community ----------
-code = await bundleCall('js/community.js', 'init');
-db = mk();
-db.community_posts.push({ id: 'c1', user_id: 'U1', portfolio_id: 'P1', content: 'Hello community this is a long enough post', category: 'Web Development', tags: ['react'], is_published: true, created_at: '2026-02-01T00:00:00Z', updated_at: '2026-02-01T00:00:00Z' });
-p = await openPage('community.html', '', db, U1, code); await sleep(500);
-ok(p.doc.querySelectorAll('.post-card').length === 1, 'M1 community feed renders posts', String(p.doc.querySelectorAll('.post-card').length));
-ok(!p.errors.length, 'M2 no console errors while loading community', p.errors.join(' / '));
-ok(!!p.doc.querySelector('.post-portfolio-btn') && p.doc.querySelector('.post-portfolio-btn').href.includes('amr-ahmed') === false && p.doc.querySelector('.post-portfolio-btn').href.endsWith('u=user-one&n=1'), 'M3 linked published portfolio shows a working View Portfolio link', p.doc.querySelector('.post-portfolio-btn')?.href);
-ok(!!p.doc.querySelector('.post-edit-btn') && !!p.doc.querySelector('.post-delete-btn'), 'M4 owner sees edit/delete');
-p = await openPage('community.html', '', db, { id: 'U2' }, code); await sleep(500);
-ok(!p.doc.querySelector('.post-edit-btn') && !p.doc.querySelector('.post-delete-btn'), 'M5 other users do not see edit/delete');
-db.portfolios[0].is_published = false;
-p = await openPage('community.html', '', db, null, code); await sleep(500);
-ok(!p.doc.querySelector('.post-portfolio-btn'), 'M6 unpublishing a portfolio removes the link from posts');
-db.portfolios[0].is_published = true;
-// create a post through the UI
-p = await openPage('community.html', '', db, U1, code); await sleep(400);
-click(p.w, p.doc.getElementById('create-post-btn')); await sleep(100);
-type(p.w, p.doc.getElementById('post-content'), 'A brand new post that is definitely long enough.');
-p.doc.getElementById('post-category').value = 'Web Development';
-const tog = p.doc.getElementById('link-portfolio-toggle'); tog.checked = true;
-click(p.w, p.doc.getElementById('post-submit-btn')); await sleep(400);
-const np = db.community_posts.find(x => x.id !== 'c1');
-ok(np && np.user_id === 'U1' && np.portfolio_id === 'P1' && np.category === 'Web Development', 'M7 creating a post saves portfolio_id and category', JSON.stringify(np));
-ok(p.doc.querySelectorAll('.post-card').length === 2, 'M8 new post appears in the feed');
-// unpublished portfolio + link toggle -> clear error, nothing saved
-db.portfolios[0].is_published = false;
-p = await openPage('community.html', '', db, U1, code); await sleep(400);
-click(p.w, p.doc.getElementById('create-post-btn')); await sleep(100);
-type(p.w, p.doc.getElementById('post-content'), 'Another long enough post body here.');
-p.doc.getElementById('post-category').value = 'Other'; p.doc.getElementById('link-portfolio-toggle').checked = true;
-const n0 = db.community_posts.length;
-click(p.w, p.doc.getElementById('post-submit-btn')); await sleep(400);
-ok(db.community_posts.length === n0 && /Publish one of your portfolios/.test(p.doc.getElementById('post-form-error').textContent), 'M9 linking without a published portfolio is refused with a clear message');
-
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -11,11 +11,10 @@ const COLS = {
   portfolio_education: 'id,portfolio_id,degree,institution,field_of_study,start_year,end_year,description,order_index',
   portfolio_certifications: 'id,portfolio_id,name,issuer,issue_date,expiry_date,credential_url,order_index',
   portfolio_links: 'id,portfolio_id,platform,url,label,icon,order_index,is_hidden',
-  community_posts: 'id,user_id,portfolio_id,content,image_url,category,tags,is_published,created_at,updated_at',
 };
 const NOT_NULL = { portfolios: ['user_id','title','slug'], portfolio_skills: ['name'], portfolio_experience: ['job_title','company'],
   portfolio_education: ['degree','institution'], portfolio_certifications: ['name'], portfolio_projects: ['title'],
-  portfolio_services: ['name'], portfolio_links: ['platform','url'], community_posts: ['user_id','content'] };
+  portfolio_services: ['name'], portfolio_links: ['platform','url'] };
 Object.keys(COLS).forEach(k => COLS[k] = COLS[k].split(','));
 
 const db = () => window.__MOCKDB__;
@@ -52,8 +51,6 @@ class Q {
     const REL = {
       'portfolios>profiles': { to: 'profiles', local: 'user_id', one: true },
       'portfolios>portfolio_skills': { to: 'portfolio_skills', remote: 'portfolio_id', one: false },
-      'community_posts>profiles': { to: 'profiles', local: 'user_id', one: true },
-      'community_posts>portfolios': { to: 'portfolios', local: 'portfolio_id', one: true },
     };
     const plain = items.filter(i => !i.includes('(')).map(i => i.trim()).filter(Boolean);
     plain.forEach(c => { if (c !== '*' && !COLS[this.t].includes(c)) throw err('42703', `column ${this.t}.${c} does not exist`); });
@@ -93,7 +90,6 @@ class Q {
     const match = r => this.f.every(fn => fn(r));
     let visible = r => true;
     if (this.t === 'portfolios') visible = r => r.user_id === me()?.id || r.is_published;
-    if (this.t === 'community_posts') visible = r => r.is_published || r.user_id === me()?.id;
     if (this.t.startsWith('portfolio_')) visible = r => owns(r.portfolio_id) || db().portfolios.some(p => p.id === r.portfolio_id && p.is_published);
     const wrap = data => {
       if (this.one) {
@@ -119,8 +115,7 @@ class Q {
         this.checkCols(p);
         const row = { id: uuid(), created_at: new Date().toISOString(), ...p };
         if (this.t.startsWith('portfolio_') && this.t !== 'portfolios' && !owns(row.portfolio_id)) throw err('42501', 'new row violates row-level security policy');
-        if ((this.t === 'portfolios' || this.t === 'community_posts') && row.user_id !== me()?.id) throw err('42501', 'new row violates row-level security policy');
-        if (this.t === 'community_posts') { row.category ??= 'Other'; row.tags ??= []; row.is_published ??= true; row.updated_at ??= row.created_at; }
+        if (this.t === 'portfolios' && row.user_id !== me()?.id) throw err('42501', 'new row violates row-level security policy');
         if (this.t === 'portfolio_skills') { row.level ??= 80; row.category ??= 'General'; }
         if (this.t === 'portfolios') {
           // Simulates trg_assign_portfolio_number: the server allocates; a client-supplied value is ignored.
@@ -134,7 +129,7 @@ class Q {
     }
     if (this.op === 'update') {
       this.checkCols(this.payload);
-      const writable = r => (this.t === 'portfolios' || this.t === 'community_posts') ? r.user_id === me()?.id : this.t === 'profiles' ? r.id === me()?.id : owns(r.portfolio_id);
+      const writable = r => this.t === 'portfolios' ? r.user_id === me()?.id : this.t === 'profiles' ? r.id === me()?.id : owns(r.portfolio_id);
       const targets = rows.filter(r => writable(r) && match(r)); // RLS: silently affects 0 rows when not owner
       for (const r of targets) {
         const next = { ...r, ...this.payload }; this.checkNN(next); this.checkSlug(next);
@@ -156,7 +151,7 @@ class Q {
       return wrap([]);
     }
     if (this.op === 'delete') {
-      const writable = r => (this.t === 'portfolios' || this.t === 'community_posts') ? r.user_id === me()?.id : owns(r.portfolio_id);
+      const writable = r => this.t === 'portfolios' ? r.user_id === me()?.id : owns(r.portfolio_id);
       const gone = rows.filter(r => writable(r) && match(r));
       db()[this.t] = rows.filter(r => !gone.includes(r));
       return wrap(gone);
@@ -165,7 +160,7 @@ class Q {
 }
 
 const supabase = {
-  from: t => new Q(t),
+  from: t => { (db().__tables ||= []).push(t); return new Q(t); },
   storage: { from: bucket => ({
     upload: async (path, file) => {
       if (!path.startsWith(me().id + '/')) return { data: null, error: err('42501', 'storage rls') };
@@ -178,10 +173,48 @@ const supabase = {
       if (!me() || me().id !== args.p_user_id) return { data: null, error: err('42501', 'not allowed') };
       const c = (db().__counters ||= {}); const n = c[args.p_user_id] ?? 0; c[args.p_user_id] = n + 1; return { data: n, error: null };
     }
-    if (name !== 'increment_view_count') return { data: null, error: err('42883', 'no function') };
-    const p = db().portfolios.find(x => x.slug === args.portfolio_slug && x.is_published);
-    if (p) p.view_count = (p.view_count || 0) + 1;
-    return { data: null, error: null };
+    if (name === 'record_portfolio_view') {
+      // Stand-in for record_portfolio_view(): same rules as the SQL function (verified on real PostgreSQL in
+      // sql/views_test.sh). Server-side identity: signed-in -> u:<id> (client id ignored); anonymous -> a:<uuid v4>.
+      const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      (db().__rpcCalls ||= []).push({ name, args: { ...args }, user: me()?.id || null });
+      const visitor = me() ? 'u:' + me().id : (args.p_visitor_id && V4.test(args.p_visitor_id) ? 'a:' + args.p_visitor_id.toLowerCase() : null);
+      const p = db().portfolios.find(x => x.id === args.p_portfolio_id && x.is_published);
+      if (!visitor || !p) return { data: false, error: null };
+      const seen = (db().__views ||= new Set()), key = p.id + '|' + visitor;
+      if (seen.has(key)) return { data: false, error: null };
+      seen.add(key); p.view_count = (p.view_count || 0) + 1; return { data: true, error: null };
+    }
+    if (name === 'explore_portfolios') {
+      // Stand-in for explore_portfolios(): same filter/sort/pagination rules as the SQL function
+      // (verified on real PostgreSQL in sql/explore_test.py).
+      (db().__rpcCalls ||= []).push({ name, args: { ...args }, user: me()?.id || null });
+      if (db().__rpcDelay) await new Promise(r => setTimeout(r, db().__rpcDelay(args)));
+      if (db().__rpcFail) return { data: null, error: err('XX000', 'boom') };
+      const esc = x => String(x ?? '').toLowerCase(), q = esc(args.p_search).trim(), role = esc(args.p_role || 'all').trim();
+      const prof = id => db().profiles.find(x => x.id === id) || null;
+      const skills = id => (db().portfolio_skills || []).filter(x => x.portfolio_id === id);
+      let rows = db().portfolios.filter(p => p.is_published === true).filter(p => {
+        const pr = prof(p.user_id) || {}, title = esc(p.headline || pr.title || '');
+        const sm = !q || esc(pr.full_name).includes(q) || title.includes(q) || skills(p.id).some(s => esc(s.name).includes(q));
+        return sm && (role === 'all' || esc(pr.role) === role || title.includes(role));
+      });
+      const t = x => new Date(x.created_at).getTime(), cmpId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      const sorters = {
+        most_viewed: (a, b) => (b.view_count || 0) - (a.view_count || 0) || t(b) - t(a) || cmpId(b, a),
+        least_viewed: (a, b) => (a.view_count || 0) - (b.view_count || 0) || t(a) - t(b) || cmpId(a, b),
+        oldest: (a, b) => t(a) - t(b) || cmpId(a, b),
+        name_asc: (a, b) => esc((prof(a.user_id) || {}).full_name).localeCompare(esc((prof(b.user_id) || {}).full_name)) || t(b) - t(a) || cmpId(b, a),
+        newest: (a, b) => t(b) - t(a) || cmpId(b, a)
+      };
+      rows.sort(sorters[args.p_sort] || sorters.newest);
+      const limit = Math.min(Math.max(args.p_limit ?? 12, 1), 50), offset = Math.max(args.p_offset ?? 0, 0), total = rows.length;
+      return { data: rows.slice(offset, offset + limit).map(p => { const pr = prof(p.user_id);
+        return { id: p.id, slug: p.slug, portfolio_number: p.portfolio_number, template_id: p.template_id, headline: p.headline, created_at: p.created_at, view_count: p.view_count || 0, total_count: total,
+          profiles: pr ? { id: pr.id, full_name: pr.full_name, title: pr.title, avatar_url: pr.avatar_url, bio: pr.bio, role: pr.role, location: pr.location, user_handle: pr.user_handle } : null,
+          portfolio_skills: skills(p.id).map(s => ({ name: s.name, order_index: s.order_index ?? 0 })) }; }), error: null };
+    }
+    return { data: null, error: err('42883', 'no function') };
   },
   auth: {
     // Simulates auth.signUp + the on_auth_user_created trigger (handle_new_user).

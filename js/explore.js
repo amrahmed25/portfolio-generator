@@ -1,6 +1,7 @@
 /**
  * explore.js — Explore Portfolios page module for PortfolioHub
- * Loads and renders published portfolio cards with search, filter, and pagination.
+ * Loads and renders published portfolio cards with search, filter, sort (incl. most/least viewed)
+ * and pagination. All of it is done by the database (see loadPortfolios).
  */
 
 import supabase from './supabase-client.js';
@@ -98,6 +99,7 @@ function bindSortHandler() {
 function bindLoadMore() {
   const btn = document.getElementById('explore-load-more-btn');
   btn?.addEventListener('click', () => {
+    if (loadingMore) return;          // one "Load more" at a time: extra clicks must not skip pages
     currentPage++;
     loadPortfolios(false);
   });
@@ -124,30 +126,25 @@ function bindResetBtn() {
 }
 
 // ─── Load Portfolios ──────────────────────────────────────────────────────────
-// All published portfolios are fetched once (capped) and then searched, sorted and
-// paginated in the browser, so a search always covers every portfolio and not just
-// the page that happened to be loaded.
-const FETCH_LIMIT = 500;
-let allPortfolios = null;
+// Search, role filter, SORT and pagination all run in the database (explore_portfolios(), see
+// supabase_explore_sorting.sql), one page at a time. Sorting by view_count therefore ranks EVERY published
+// portfolio, not just the ones already downloaded, and view_count is the unique-view counter
+// maintained by record_portfolio_view().
+let requestSeq = 0;            // lets a newer request supersede an older one still in flight
+let loadingMore = false;       // true while a "Load more" page is being fetched
+let totalCount = 0;
+const renderedIds = new Set(); // a page boundary can shift when counts change between "Load more" clicks
 
-async function fetchAllPortfolios() {
-  const { data, error } = await supabase
-    .from('portfolios')
-    .select(`
-      id,
-      slug,
-      portfolio_number,
-      template_id,
-      headline,
-      created_at,
-      profiles ( id, full_name, title, avatar_url, bio, role, location, user_handle ),
-      portfolio_skills ( name, order_index )
-    `)
-    .eq('is_published', true)
-    .order('created_at', { ascending: false })
-    .limit(FETCH_LIMIT);
+async function fetchPage() {
+  const { data, error } = await supabase.rpc('explore_portfolios', {
+    p_search: currentSearch.trim(),
+    p_role: currentRole,
+    p_sort: currentSort,
+    p_limit: PAGE_SIZE,
+    p_offset: currentPage * PAGE_SIZE
+  });
   if (error) throw error;
-  return data || [];
+  return Array.isArray(data) ? data : [];
 }
 
 function skillNames(p) {
@@ -158,82 +155,69 @@ function skillNames(p) {
     .filter(Boolean);
 }
 
-function applyFilters(list) {
-  const q = currentSearch.trim().toLowerCase();
-  const role = currentRole.toLowerCase();
-  const out = list.filter(p => {
-    const profile = p.profiles || {};
-    const name = (profile.full_name || '').toLowerCase();
-    const title = (p.headline || profile.title || '').toLowerCase();
-    const skills = skillNames(p).join(' ').toLowerCase();
-    const searchMatch = !q || name.includes(q) || title.includes(q) || skills.includes(q);
-    const roleMatch = role === 'all' || (profile.role || '').toLowerCase() === role || title.includes(role);
-    return searchMatch && roleMatch;
-  });
-  if (currentSort === 'name_asc') {
-    out.sort((a, b) => (a.profiles?.full_name || '').localeCompare(b.profiles?.full_name || ''));
-  } else if (currentSort === 'oldest') {
-    out.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-  } else {
-    out.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-  }
-  return out;
-}
-
 async function loadPortfolios(reset = false) {
   if (reset) {
     currentPage = 0;
     hasMore = true;
+    renderedIds.clear();
+    loadingMore = false;
+  } else {
+    loadingMore = true;
   }
+  const seq = ++requestSeq;
 
   const grid         = document.getElementById('portfolio-grid');
   const skeleton     = document.getElementById('portfolio-skeleton');
   const emptyEl      = document.getElementById('explore-empty');
   const loadMoreWrap = document.getElementById('explore-load-more-wrap');
+  const loadMoreBtn  = document.getElementById('explore-load-more-btn');
   const resultsInfo  = document.getElementById('results-info');
 
   if (reset) {
-    if (grid) { grid.replaceChildren(); }
+    if (grid) { grid.replaceChildren(); grid.style.display = 'none'; }
     if (emptyEl) emptyEl.style.display = 'none';
     if (loadMoreWrap) loadMoreWrap.style.display = 'none';
     if (resultsInfo) resultsInfo.style.display = 'none';
+    if (skeleton) skeleton.style.display = 'grid';
+  } else if (loadMoreBtn) {
+    loadMoreBtn.disabled = true;     // no double clicks while the next page loads
   }
 
   try {
-    if (allPortfolios === null) {
-      if (skeleton) skeleton.style.display = 'grid';
-      if (grid) grid.style.display = 'none';
-      allPortfolios = await fetchAllPortfolios();
-    }
-    if (skeleton) skeleton.style.display = 'none';
+    const rows = await fetchPage();
+    if (seq !== requestSeq) return;  // a newer search/sort/filter replaced this request
 
-    const filtered = applyFilters(allPortfolios);
-    const start = currentPage * PAGE_SIZE;
-    const slice = filtered.slice(start, start + PAGE_SIZE);
+    if (skeleton) skeleton.style.display = 'none';
     if (grid) grid.style.display = 'grid';
+    if (rows.length) totalCount = Number(rows[0].total_count) || rows.length;
+    else if (reset) totalCount = 0;
 
     const countEl = document.getElementById('results-count');
-    if (countEl) countEl.textContent = `${filtered.length} portfolio${filtered.length !== 1 ? 's' : ''} found`;
+    if (countEl) countEl.textContent = `${totalCount} portfolio${totalCount !== 1 ? 's' : ''} found`;
     if (resultsInfo) resultsInfo.style.display = 'block';
 
-    if (filtered.length === 0) {
+    if (totalCount === 0) {
       if (emptyEl) emptyEl.style.display = 'flex';
       if (loadMoreWrap) loadMoreWrap.style.display = 'none';
       return;
     }
 
-    slice.forEach(p => {
+    rows.forEach(p => {
+      if (renderedIds.has(p.id)) return;
+      renderedIds.add(p.id);
       const card = renderPortfolioCard(p, p.profiles || {});
       if (card && grid) grid.appendChild(card);
     });
 
-    hasMore = start + PAGE_SIZE < filtered.length;
+    hasMore = (currentPage + 1) * PAGE_SIZE < totalCount;
     if (loadMoreWrap) loadMoreWrap.style.display = hasMore ? 'flex' : 'none';
   } catch (err) {
+    if (seq !== requestSeq) return;
     console.error('Error loading portfolios:', err);
-    allPortfolios = null; // allow a retry to refetch
     if (skeleton) skeleton.style.display = 'none';
     showErrorState();
+  } finally {
+    if (seq === requestSeq) { loadingMore = false; if (loadMoreBtn) loadMoreBtn.disabled = false; }
   }
 }
 

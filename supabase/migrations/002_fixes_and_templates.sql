@@ -32,20 +32,8 @@ BEGIN
 END $$;
 
 -- ------------------------------------------------------------
--- 2. community_posts -> profiles relationship
---    community_posts.user_id points at auth.users, which PostgREST
---    cannot embed. A second FK to profiles(id) lets the client select
---    `profiles(full_name, title, avatar_url)` in one query.
+-- 2. portfolios -> profiles relationship
 -- ------------------------------------------------------------
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'community_posts_user_id_profiles_fkey') THEN
-    ALTER TABLE public.community_posts
-      ADD CONSTRAINT community_posts_user_id_profiles_fkey
-      FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
-  END IF;
-END $$;
-
 -- Same for portfolios -> profiles (explore page embeds profiles).
 DO $$
 BEGIN
@@ -68,8 +56,6 @@ LEFT JOIN public.profiles p ON p.id = u.id
 WHERE p.id IS NULL
 ON CONFLICT DO NOTHING;
 
-CREATE INDEX IF NOT EXISTS idx_community_posts_portfolio_id ON public.community_posts(portfolio_id);
-
 -- ------------------------------------------------------------
 -- 3. Row Level Security: make the policies re-runnable and tighten them
 -- ------------------------------------------------------------
@@ -87,30 +73,6 @@ CREATE POLICY "portfolio_links_select"
           (p.is_published = TRUE AND portfolio_links.is_hidden = FALSE)
           OR p.user_id = auth.uid()
         )
-    )
-  );
-
--- 3b. A post may only point at a portfolio the author owns.
-DROP POLICY IF EXISTS "community_posts_insert_own" ON public.community_posts;
-CREATE POLICY "community_posts_insert_own"
-  ON public.community_posts FOR INSERT
-  WITH CHECK (
-    auth.uid() = user_id
-    AND (
-      portfolio_id IS NULL
-      OR EXISTS (SELECT 1 FROM public.portfolios p WHERE p.id = portfolio_id AND p.user_id = auth.uid())
-    )
-  );
-
-DROP POLICY IF EXISTS "community_posts_update_own" ON public.community_posts;
-CREATE POLICY "community_posts_update_own"
-  ON public.community_posts FOR UPDATE
-  USING (auth.uid() = user_id)
-  WITH CHECK (
-    auth.uid() = user_id
-    AND (
-      portfolio_id IS NULL
-      OR EXISTS (SELECT 1 FROM public.portfolios p WHERE p.id = portfolio_id AND p.user_id = auth.uid())
     )
   );
 
@@ -144,8 +106,7 @@ CREATE TRIGGER trg_protect_portfolio_columns
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types) VALUES
   ('avatars',          'avatars',          TRUE,  5242880,  ARRAY['image/jpeg','image/png','image/webp','image/gif']),
   ('covers',           'covers',           TRUE,  10485760, ARRAY['image/jpeg','image/png','image/webp','image/gif']),
-  ('project-images',   'project-images',   TRUE,  10485760, ARRAY['image/jpeg','image/png','image/webp','image/gif']),
-  ('community-images', 'community-images', TRUE,  10485760, ARRAY['image/jpeg','image/png','image/webp','image/gif'])
+  ('project-images',   'project-images',   TRUE,  10485760, ARRAY['image/jpeg','image/png','image/webp','image/gif'])
 ON CONFLICT (id) DO UPDATE
   SET public             = EXCLUDED.public,
       file_size_limit    = EXCLUDED.file_size_limit,
@@ -155,7 +116,7 @@ DO $$
 DECLARE
   b TEXT;
 BEGIN
-  FOREACH b IN ARRAY ARRAY['avatars','covers','project-images','community-images'] LOOP
+  FOREACH b IN ARRAY ARRAY['avatars','covers','project-images'] LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects', b || '_public_read');
     EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects', b || '_owner_insert');
     EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects', b || '_owner_update');

@@ -100,34 +100,22 @@ async function loadStats(userId) {
 
     const totalViews = (viewData || []).reduce((sum, p) => sum + (p.view_count || 0), 0);
 
-    // Community posts
-    let communityPosts = 0;
-    try {
-      const { count } = await supabase
-        .from('community_posts')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId);
-      communityPosts = count || 0;
-    } catch (_) { /* table may not exist */ }
-
     _renderStats({
       total: totalPortfolios || 0,
       published: publishedCount || 0,
       views: totalViews,
-      posts: communityPosts,
     });
   } catch (err) {
     console.error('[Dashboard] Stats error:', err);
-    _renderStats({ total: 0, published: 0, views: 0, posts: 0 });
+    _renderStats({ total: 0, published: 0, views: 0 });
   }
 }
 
-function _renderStats({ total, published, views, posts }) {
+function _renderStats({ total, published, views }) {
   const map = {
     'stat-total-portfolios': total,
     'stat-published': published,
     'stat-views': views.toLocaleString(),
-    'stat-posts': posts,
   };
   Object.entries(map).forEach(([id, val]) => {
     const el = document.getElementById(id);

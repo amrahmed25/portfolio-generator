@@ -112,9 +112,9 @@ for (const id of Object.keys(TEMPLATES)) {
 // ---------- 6. static guarantees ----------
 {
   const src = f => fs.readFileSync(ROOT + f, 'utf8');
-  for (const f of ['js/profile.js', 'js/portfolio-builder.js', 'js/auth.js', 'js/dashboard.js', 'js/community.js']) ok(!/\.upsert\(/.test(src(f)), `X1 ${f} has no client-side upsert`);
+  for (const f of ['js/profile.js', 'js/portfolio-builder.js', 'js/auth.js', 'js/dashboard.js']) ok(!/\.upsert\(/.test(src(f)), `X1 ${f} has no client-side upsert`);
   ok(!/service_role|SERVICE_ROLE/.test(['js/config.js', '.env.example', 'js/supabase-client.js'].map(src).join('').replace(/never put a (secret or )?service_role[^\n]*/gi, '').replace(/Never put a service_role[^\n]*/gi, '')), 'X2 no service_role key in browser code');
-  ok(!/isAdmin|is_admin|\.role\s*===/.test(['js/auth.js', 'js/dashboard.js', 'js/navigation.js', 'js/community.js'].map(src).join('')), 'X3 no client-side role checks used for authorization');
+  ok(!/isAdmin|is_admin|\.role\s*===/.test(['js/auth.js', 'js/dashboard.js', 'js/navigation.js'].map(src).join('')), 'X3 no client-side role checks used for authorization');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

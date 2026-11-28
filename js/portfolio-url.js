@@ -49,7 +49,9 @@ export function buildPublicUrl(target, loc) {
   const { origin, hostname, pathname } = loc;
   // Hosts without rewrite rules (local servers, GitHub Pages) need the query-string form.
   const noRewrite = /^(localhost|127\.|\[::1\])/.test(hostname) || hostname.endsWith('.github.io');
-  const dir = pathname.replace(/[^/]*$/, '');
+  // Directory that holds public-portfolio.html. When the page was reached through a rewrite (/u/...), cut the
+  // /u/... part off first, otherwise the link would be built relative to /u/<handle>/ and 404 on refresh.
+  const dir = pathname.replace(/\/u\/.*$/, '/').replace(/[^/]*$/, '');
   const page = `${origin}${dir}public-portfolio.html`;
 
   if (hasCanonicalParts(target)) {

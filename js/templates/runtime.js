@@ -126,84 +126,147 @@ document.addEventListener('click', function (e) {
   }
 
 
+/* ------------------------------------------------------------------------------------------------
+ * Contact form (shared by every template; the three form markups all use #contactForm / #sendBtn / #formMsg)
+ *
+ * Submitting sends a REAL email through the site's /api/contact endpoint. This sandboxed document has an
+ * opaque origin, so it hands the message to its parent page (js/contact-relay.js), which performs the
+ * same-origin request. Success is shown only when the server reports that the email provider accepted the
+ * message. Gmail Compose is kept as an optional fallback link shown when delivery fails.
+ * ---------------------------------------------------------------------------------------------- */
 var form = document.getElementById('contactForm');
 
 if (form) {
   var msgBox = document.getElementById('formMsg');
+  var sendBtn = document.getElementById('sendBtn') || form.querySelector('button[type="submit"]');
+  var idleHtml = sendBtn ? sendBtn.innerHTML : '';
+  var sending = false;
+  var isPreview = !!(document.body && document.body.getAttribute('data-preview') === '1');
+  var EMAIL_RE = /^[^\s@<>"',;:\\()\[\]]{1,64}@[^\s@<>"',;:\\()\[\]]+\.[A-Za-z]{2,}$/;
+  var TEXT = {
+    success: 'Message sent successfully.',
+    failure: 'Failed to send message. Please try again.',
+    rate: 'Too many messages in a short time. Please wait a few minutes and try again.',
+    preview: 'The contact form is disabled in the builder preview. Visitors can send messages from your published portfolio.'
+  };
 
-  var show = function (ok, text) {
+  // Honeypot for bots: invisible to people and assistive tech, never filled by them.
+  (function () {
+    var trap = document.createElement('input');
+    trap.type = 'text'; trap.name = 'website'; trap.tabIndex = -1; trap.autocomplete = 'off';
+    trap.setAttribute('aria-hidden', 'true');
+    trap.style.cssText = 'position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;opacity:0;';
+    form.appendChild(trap);
+  })();
+
+  var show = function (ok, text, extra) {
     if (!msgBox) return;
-
     msgBox.hidden = false;
     msgBox.className = 'form-msg ' + (ok ? 'ok' : 'err');
-    msgBox.textContent = text;
+    msgBox.setAttribute('role', ok ? 'status' : 'alert');
+    while (msgBox.firstChild) msgBox.removeChild(msgBox.firstChild);
+    msgBox.appendChild(document.createTextNode(text));
+    if (extra) { msgBox.appendChild(document.createTextNode(' ')); msgBox.appendChild(extra); }
+  };
+
+  var field = function (n) { return form.elements[n]; };
+  var clearInvalid = function () {
+    Array.prototype.forEach.call(form.elements, function (el) { if (el.removeAttribute) el.removeAttribute('aria-invalid'); });
+  };
+  var invalid = function (n, text) {
+    var el = field(n);
+    if (el) { el.setAttribute('aria-invalid', 'true'); if (el.focus) el.focus(); }
+    show(false, text);
+  };
+  form.addEventListener('input', function (e) { if (e.target && e.target.removeAttribute) e.target.removeAttribute('aria-invalid'); });
+
+  var setLoading = function (on) {
+    sending = on;
+    form.setAttribute('aria-busy', on ? 'true' : 'false');
+    if (!sendBtn) return;
+    sendBtn.disabled = on;
+    sendBtn.style.opacity = on ? '0.7' : '';
+    sendBtn.style.cursor = on ? 'progress' : '';
+    if (on) sendBtn.textContent = 'Sending...'; else sendBtn.innerHTML = idleHtml;
+  };
+
+  // Optional fallback that keeps Gmail Compose available when delivery fails.
+  var gmailLink = function (v) {
+    var to = (form.getAttribute('data-email') || '').trim();
+    if (!EMAIL_RE.test(to)) return null;
+    var a = document.createElement('a');
+    a.href = 'https://mail.google.com/mail/?view=cm&fs=1' +
+      '&to=' + encodeURIComponent(to) +
+      '&su=' + encodeURIComponent('Portfolio Contact: ' + v.name + (v.subject ? ' - ' + v.subject : '')) +
+      '&body=' + encodeURIComponent(['Name: ' + v.name, 'Visitor email: ' + v.email, '', 'Message:', v.message].join('\n'));
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.textContent = 'Write it in Gmail instead';
+    a.style.cssText = 'color:inherit;text-decoration:underline;';
+    return a;
+  };
+
+  // Hand the message to the parent page, which delivers it. Resolves with { ok, code, message, fields }.
+  var relay = function (payload) {
+    return new Promise(function (resolve) {
+      if (isPreview) { resolve({ ok: false, code: 'preview' }); return; }
+      if (window.parent === window) { resolve({ ok: false, code: 'unavailable' }); return; }
+      var id = Date.now() + '-' + Math.random().toString(36).slice(2);
+      var timer = setTimeout(function () { done({ ok: false, code: 'network' }); }, 25000);
+      var onMsg = function (e) {
+        var d = e.data;
+        if (e.source !== window.parent || !d || d.source !== 'ph-contact' || d.type !== 'result' || d.id !== id) return;
+        done(d);
+      };
+      var done = function (result) { clearTimeout(timer); window.removeEventListener('message', onMsg); resolve(result); };
+      window.addEventListener('message', onMsg);
+      try { window.parent.postMessage({ source: 'ph-contact', type: 'submit', id: id, payload: payload }, '*'); }
+      catch (err) { done({ ok: false, code: 'unavailable' }); }
+    });
   };
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
+    if (sending) return;                       // duplicate submissions are ignored while a request is running
 
-    var name = form.elements.name.value.trim();
-    var email = form.elements.email.value.trim();
-    var subject = form.elements.subject.value.trim();
-    var message = form.elements.message.value.trim();
+    var v = {
+      name: field('name').value.trim(),
+      email: field('email').value.trim(),
+      subject: field('subject') ? field('subject').value.trim() : '',
+      message: field('message').value.trim(),
+      website: field('website') ? field('website').value : ''
+    };
 
-    var to = (
-      form.getAttribute('data-email') ||
-      ''
-    ).trim();
+    clearInvalid();
+    if (!v.name) return invalid('name', 'Please enter your name.');
+    if (v.name.length > 100) return invalid('name', 'Your name must be at most 100 characters.');
+    if (!v.email) return invalid('email', 'Please enter your email address.');
+    if (v.email.length > 254 || !EMAIL_RE.test(v.email)) return invalid('email', 'Please enter a valid email address.');
+    if (v.subject.length > 150) return invalid('subject', 'The subject must be at most 150 characters.');
+    if (!v.message) return invalid('message', 'Please write a message.');
+    if (v.message.length > 5000) return invalid('message', 'Your message must be at most 5000 characters.');
 
-    var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    setLoading(true);
+    if (msgBox) { msgBox.hidden = true; }
 
-    if (!name || !email || !message) {
-      show(false, 'Please fill in your name, email and message.');
-      return;
-    }
-
-    if (!emailPattern.test(email)) {
-      show(false, 'Please enter a valid email address.');
-      return;
-    }
-
-    if (!emailPattern.test(to)) {
-      show(false, 'The portfolio owner has not configured a valid email address.');
-      return;
-    }
-
-    var emailSubject =
-      'Portfolio Contact: ' + name +
-      (subject ? ' - ' + subject : '');
-
-    var body = [
-      'Name: ' + name,
-      'Visitor email: ' + email,
-      '',
-      'Message:',
-      message
-    ].join('\n');
-
-    var gmailUrl =
-        'https://mail.google.com/mail/?view=cm&fs=1' +
-        '&to=' + encodeURIComponent(to) +
-        '&su=' + encodeURIComponent(emailSubject) +
-        '&body=' + encodeURIComponent(body);
-
-    // Gmail Compose always opens in a NEW top-level tab; it is never loaded inside this frame
-    // (Gmail forbids framing). Do not pass "noopener" in the features string: it makes
-    // window.open() return null even when the tab opened, which falsely reports "blocked".
-    var gmailWindow = window.open(gmailUrl, '_blank');
-
-    if (gmailWindow) {
-      try { gmailWindow.opener = null; } catch (err) { /* cross-origin: nothing to detach */ }
-      show(
-        true,
-        'Gmail compose opened with your message. Please review it and click Send in Gmail.'
-      );
-    } else {
-      show(
-        false,
-        'Your browser blocked the Gmail window. Allow pop-ups for this site and try again, or email ' + to + ' directly.'
-      );
-    }
+    relay(v).then(function (res) {
+      setLoading(false);
+      if (res && res.ok === true) {
+        show(true, TEXT.success);
+        form.reset();                          // cleared ONLY after confirmed delivery
+        return;
+      }
+      // Failure: the visitor's input stays in the form so nothing has to be retyped.
+      var code = res && res.code;
+      if (code === 'preview') { show(false, TEXT.preview); return; }
+      if (code === 'validation') {
+        var first = res.fields ? Object.keys(res.fields)[0] : null;
+        if (first) { invalid(first, res.fields[first]); return; }
+        show(false, res.message || TEXT.failure); return;
+      }
+      if (code === 'rate_limited') { show(false, TEXT.rate, gmailLink(v)); return; }
+      show(false, TEXT.failure, gmailLink(v));
+    });
   });
 }
 })();

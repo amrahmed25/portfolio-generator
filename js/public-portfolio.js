@@ -10,6 +10,8 @@ import { showToast, copyToClipboard } from './utils.js';
 import { normalizeData, buildDocument } from './portfolio-renderer.js';
 import { parseRoute, fromPublicNumber } from './portfolio-url.js';
 import { publicUrl } from './portfolio-service.js';
+import { attachContactRelay } from './contact-relay.js';
+import { recordPortfolioView } from './view-tracker.js';
 
 const $ = sel => document.querySelector(sel);
 const STATES = ['state-not-found', 'state-not-published', 'state-error'];
@@ -19,6 +21,9 @@ const CHILD_TABLES = {
   experience: 'portfolio_experience', education: 'portfolio_education',
   certifications: 'portfolio_certifications', links: 'portfolio_links'
 };
+
+/** Id of the portfolio currently shown (set by this page, never by the iframe). Used by the contact relay. */
+let currentPortfolioId = null;
 
 /** URL the share/copy buttons use. Starts as the current URL; becomes the canonical one after load. */
 let shareUrl = window.location.href;
@@ -62,7 +67,9 @@ function renderFrame(model) {
   frame.id = 'portfolio-frame';
   frame.title = `${model.name}'s portfolio`;
   // Same sandbox as the builder preview: scripts run, but cannot touch this page or its session.
-  frame.setAttribute('sandbox', 'allow-scripts allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols');
+  // allow-forms is REQUIRED: without it the browser blocks form submission before the submit event
+  // fires, so the contact form's Send button would do nothing at all.
+  frame.setAttribute('sandbox', 'allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-top-navigation-by-user-activation allow-top-navigation-to-custom-protocols');
   frame.srcdoc = buildDocument(model, { baseUrl: new URL('./', document.baseURI).href });
   container.replaceChildren(frame);
 }
@@ -124,13 +131,15 @@ async function loadPortfolio(route) {
     keys.forEach((k, i) => { raw[k] = childRes[i].data || []; });
     const model = normalizeData(raw);
 
+    currentPortfolioId = portfolio.id;
     renderFrame(model);
     applyMeta(model, model.avatar);
     canonicalize(portfolio, profileRes.data);
     hideLoading();
 
-    // Count the view; a failure here must never affect the page.
-    try { await supabase.rpc('increment_view_count', { portfolio_slug: portfolio.slug }); } catch (_) { /* ignore */ }
+    // Count the view: one per visitor per portfolio (decided by the database, see js/view-tracker.js and
+    // supabase_unique_views.sql). A failure here must never affect the page.
+    try { await recordPortfolioView(supabase, portfolio.id); } catch (_) { /* ignore */ }
   } catch (err) {
     console.error('[PortfolioHub] Failed to load portfolio:', err);
     hideLoading();
@@ -156,6 +165,8 @@ function initShare() {
 
 function init() {
   initShare();
+  // Contact form: the sandboxed portfolio asks this page to deliver the message through /api/contact.
+  attachContactRelay({ getFrameWindow: () => document.getElementById('portfolio-frame')?.contentWindow, getPortfolioId: () => currentPortfolioId });
   const route = parseRoute(window.location.pathname, window.location.search);
   if (!route) {
     document.title = 'Portfolio Not Found | PortfolioHub';

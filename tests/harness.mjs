@@ -1,4 +1,4 @@
-import { JSDOM } from 'jsdom';
+import { JSDOM, CookieJar } from 'jsdom';
 import esbuild from 'esbuild';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -35,15 +35,23 @@ export function seed() {
       { id: 'P2', user_id: 'U2', title: 'Other', slug: 'taken', portfolio_number: 0, template_id: 'reference', is_published: true, theme_color: '#2563EB', view_count: 0, sections: {}, created_at: now }
     ],
     portfolio_projects: [], portfolio_services: [], portfolio_skills: [], portfolio_experience: [],
-    portfolio_education: [], portfolio_certifications: [], portfolio_links: [], community_posts: [], __counters: { U1: 1, U2: 1 }
+    portfolio_education: [], portfolio_certifications: [], portfolio_links: [], __counters: { U1: 1, U2: 1 }
   };
 }
-export async function openPage(file, query, db, user, code, pathOverride) {
+/** A persistent "browser profile": localStorage + cookies survive across openPage() calls (refresh, reopen). */
+export function newBrowser() { return { local: {}, jar: new CookieJar() }; }
+export async function openPage(file, query, db, user, code, pathOverride, browser) {
   let html = fs.readFileSync(`${ROOT}/${file}`, 'utf8')
     .replace(/<script[^>]*src="js\/[^"]*"[^>]*><\/script>/g, '')
     .replace(/<script src="https:[^>]*><\/script>/g, '');
-  const dom = new JSDOM(html, { url: `http://localhost:8080${pathOverride || '/' + file}${query}`, runScripts: 'outside-only', pretendToBeVisual: true });
+  const dom = new JSDOM(html, { url: `http://localhost:8080${pathOverride || '/' + file}${query}`, runScripts: 'outside-only', pretendToBeVisual: true, ...(browser ? { cookieJar: browser.jar } : {}) });
   const w = dom.window;
+  if (browser) {
+    for (const [k, v] of Object.entries(browser.local)) w.localStorage.setItem(k, v);
+    const set = w.Storage.prototype.setItem, del = w.Storage.prototype.removeItem;
+    w.Storage.prototype.setItem = function (k, v) { set.call(this, k, v); if (this === w.localStorage) browser.local[k] = String(v); };
+    w.Storage.prototype.removeItem = function (k) { del.call(this, k); if (this === w.localStorage) delete browser.local[k]; };
+  }
   w.__MOCKDB__ = db; w.__MOCKUSER__ = user; w.confirm = () => true;
   w.PORTFOLIOHUB_CONFIG = { supabaseUrl: 'https://x.supabase.co', supabaseAnonKey: 'k' };
   const errors = [];
